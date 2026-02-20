@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>DfE IFC Namer</Name>
+    <Assembly>C:\DfEIfcNamer\DfEIfcNamer.dll</Assembly>
+    <AddInId>8F9E6D6A-9EA8-4AB4-95AF-383843A51621</AddInId>
+    <FullClassName>DfEIfcNamer.App.DfEApplication</FullClassName>
+    <VendorId>DFE</VendorId>
+    <VendorDescription>Department for Education IFC naming tooling.</VendorDescription>
+  </AddIn>
+</RevitAddIns>

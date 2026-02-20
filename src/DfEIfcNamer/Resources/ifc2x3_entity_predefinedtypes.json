@@ -1,0 +1,26 @@
+[
+  {
+    "DisplayName": "Air Terminal",
+    "IFCClassToken": "AirTerminal",
+    "ExportAs": "IfcAirTerminal",
+    "ExportType": "IfcAirTerminalType",
+    "PredefinedTypes": ["DIFFUSER", "GRILLE", "LOUVRE", "REGISTER", "USERDEFINED"],
+    "NameFormat": "AIR-XXXXX"
+  },
+  {
+    "DisplayName": "Door",
+    "IFCClassToken": "Door",
+    "ExportAs": "IfcDoor",
+    "ExportType": "IfcDoorType",
+    "PredefinedTypes": ["DOOR", "GATE", "TRAPDOOR", "USERDEFINED"],
+    "NameFormat": "DOR-XXXXX"
+  },
+  {
+    "DisplayName": "Window",
+    "IFCClassToken": "Window",
+    "ExportAs": "IfcWindow",
+    "ExportType": "IfcWindowType",
+    "PredefinedTypes": ["WINDOW", "SKYLIGHT", "LIGHTDOME", "USERDEFINED"],
+    "NameFormat": "WIN-XXXXX"
+  }
+]
