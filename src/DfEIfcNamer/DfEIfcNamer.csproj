@@ -1,38 +1,41 @@
 <Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <UseWPF>true</UseWPF>
+
     <AssemblyName>DfEIfcNamer</AssemblyName>
     <RootNamespace>DfEIfcNamer</RootNamespace>
-    <LangVersion>latest</LangVersion>
+
+    <!-- Keeps output stable/predictable -->
     <Platforms>AnyCPU</Platforms>
+    <LangVersion>latest</LangVersion>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <EnableDefaultItems>false</EnableDefaultItems>
-    <Revit2024ApiPath>$(MSBuildThisFileDirectory)..\..\lib\revit2024</Revit2024ApiPath>
-    <Revit2024ApiPath Condition="'$([System.Environment]::GetEnvironmentVariable('REVIT_2024_API_PATH'))' != ''">$([System.Environment]::GetEnvironmentVariable('REVIT_2024_API_PATH'))</Revit2024ApiPath>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <OutputPath>bin\Release\</OutputPath>
   </PropertyGroup>
 
+  <!-- Revit 2024 API references (hard path for reliable build) -->
   <ItemGroup>
-    <Reference Include="System.Web.Extensions" />
     <Reference Include="RevitAPI">
-      <HintPath>$(Revit2024ApiPath)\RevitAPI.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+
     <Reference Include="RevitAPIUI">
-      <HintPath>$(Revit2024ApiPath)\RevitAPIUI.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPIUI.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 
+  <!-- JSON / shared parameter resources -->
   <ItemGroup>
-    <Compile Include="**\*.cs" />
-    <Page Include="UI\*.xaml" />
+    <!-- Keep JSON embedded if your ResourceJsonService reads embedded resources -->
     <EmbeddedResource Include="Resources\*.json" />
 
+    <!-- Also copy to output so deployment can use on-disk fallbacks -->
     <None Include="Resources\ifc2x3_entity_predefinedtypes.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -43,4 +46,10 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <!-- Helps when replacing JavaScriptSerializer with System.Text.Json in net48 -->
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
 </Project>
