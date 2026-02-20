@@ -1,62 +1,32 @@
-# DfE IFC Namer – Revit 2024 Installation
+# DfE IFC Namer – Revit 2024 Install (Locked-down target machine)
 
-## 1) Build (Release)
-1. Open `src/DfEIfcNamer/DfEIfcNamer.csproj` in Visual Studio 2022.
-2. Ensure Revit 2024 API references resolve:
-   - `C:\Program Files\Autodesk\Revit 2024\RevitAPI.dll`
-   - `C:\Program Files\Autodesk\Revit 2024\RevitAPIUI.dll`
-3. Build configuration: **Release | Any CPU**.
-4. Expected output DLL:
-   - `src\DfEIfcNamer\bin\Release\DfEIfcNamer.dll`
+Deployment layout (DiRoots style):
 
-## 2) Install (User, no admin)
-Run in PowerShell:
+- `C:\ProgramData\Autodesk\Revit\Addins\2024\DfEIfcNamer.addin`
+- `C:\ProgramData\Autodesk\Revit\Addins\2024\DfEIfcNamer\DfEIfcNamer.dll`
+- `C:\ProgramData\Autodesk\Revit\Addins\2024\DfEIfcNamer\Resources\...`
+
+## Build/package on a build machine
+Use a machine with Visual Studio Build Tools and Revit API DLLs available (`lib\revit2024` or `REVIT_2024_API_PATH`):
 
 ```powershell
-./deploy/Revit2024/install-user.ps1
+./build/package.ps1
 ```
 
-Installed layout:
-- `.addin`:
-  `%APPDATA%\Autodesk\Revit\Addins\2024\DfEIfcNamer.addin`
-- plugin folder:
-  `%APPDATA%\Autodesk\Revit\Addins\2024\DfEIfcNamer\`
-  - `DfEIfcNamer.dll`
-  - `DfEIfcNamer.pdb` (optional)
-  - `Resources\...`
-  - `DfE_IfcNamer_SharedParameters.txt`
+This creates:
+- `dist\Revit2024\AllUsers\`
+- `dist\DfEIfcNamer-Revit2024-AllUsers.zip`
 
-## 3) Install (All Users, admin)
-Run PowerShell as Administrator:
+## Install on locked-down target machine (no Visual Studio required)
+1. Download artifact zip (`DfEIfcNamer-Revit2024-AllUsers.zip`).
+2. Extract the zip.
+3. Copy `DfEIfcNamer.addin` to:
+   - `C:\ProgramData\Autodesk\Revit\Addins\2024\`
+4. Copy the folder `DfEIfcNamer` to:
+   - `C:\ProgramData\Autodesk\Revit\Addins\2024\`
+5. Restart Revit 2024.
 
-```powershell
-./deploy/Revit2024/install-allusers.ps1
-```
-
-Installed layout:
-- `.addin`:
-  `C:\ProgramData\Autodesk\Revit\Addins\2024\DfEIfcNamer.addin`
-- plugin folder:
-  `C:\ProgramData\Autodesk\Revit\Addins\2024\DfEIfcNamer\`
-
-## 4) Uninstall
-Delete:
-- the installed `.addin` file, and
-- the installed `DfEIfcNamer` folder
-from either user scope (`%APPDATA%`) or all-users scope (`C:\ProgramData`) depending on how installed.
-
-## 5) Troubleshooting
-
-### External Tools – Add-in Assembly Not Found
-- Re-run install script and confirm reported `Assembly` path exists.
-- Open installed `.addin` and verify `<Assembly>` points to `...\DfEIfcNamer\DfEIfcNamer.dll`.
-
-### Shared parameter file not found
-- Confirm this file exists in installed plugin folder:
-  - `DfE_IfcNamer_SharedParameters.txt`
-  - or `Resources\DfE_IfcNamer_SharedParameters.txt`
-- Use ribbon command **DfEIfcNamer: Diagnostics** to inspect resolved path and existence.
-
-### Revit API references missing
-- Confirm Revit 2024 is installed and paths in `.csproj` exist.
-- Re-open project and rebuild Release after fixing reference paths.
+## Uninstall
+Delete both:
+- `C:\ProgramData\Autodesk\Revit\Addins\2024\DfEIfcNamer.addin`
+- `C:\ProgramData\Autodesk\Revit\Addins\2024\DfEIfcNamer\`

@@ -8,6 +8,8 @@
     <Platforms>AnyCPU</Platforms>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <EnableDefaultItems>false</EnableDefaultItems>
+    <Revit2024ApiPath>$(MSBuildThisFileDirectory)..\..\lib\revit2024</Revit2024ApiPath>
+    <Revit2024ApiPath Condition="'$([System.Environment]::GetEnvironmentVariable('REVIT_2024_API_PATH'))' != ''">$([System.Environment]::GetEnvironmentVariable('REVIT_2024_API_PATH'))</Revit2024ApiPath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
@@ -17,11 +19,11 @@
   <ItemGroup>
     <Reference Include="System.Web.Extensions" />
     <Reference Include="RevitAPI">
-      <HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPI.dll</HintPath>
+      <HintPath>$(Revit2024ApiPath)\RevitAPI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="RevitAPIUI">
-      <HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPIUI.dll</HintPath>
+      <HintPath>$(Revit2024ApiPath)\RevitAPIUI.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
@@ -30,7 +32,11 @@
     <Compile Include="**\*.cs" />
     <Page Include="UI\*.xaml" />
     <EmbeddedResource Include="Resources\*.json" />
-    <None Include="Resources\*.json">
+
+    <None Include="Resources\ifc2x3_entity_predefinedtypes.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="Resources\classification_slots.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="Resources\DfE_IfcNamer_SharedParameters.txt">
