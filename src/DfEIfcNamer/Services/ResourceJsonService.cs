@@ -2,7 +2,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Web.Script.Serialization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using DfEIfcNamer.Models;
 
 namespace DfEIfcNamer.Services
@@ -11,24 +12,30 @@ namespace DfEIfcNamer.Services
     {
         private const string EntityResource = "DfEIfcNamer.Resources.ifc2x3_entity_predefinedtypes.json";
         private const string ClassificationResource = "DfEIfcNamer.Resources.classification_slots.json";
-        private readonly JavaScriptSerializer _serializer = new JavaScriptSerializer();
+        private static readonly JsonSerializerOptions JsonOpts = new()
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+            WriteIndented = true
+        };
 
         public IList<IfcEntityDefinition> LoadEntityLibrary()
         {
             var json = ReadEmbedded(EntityResource);
-            return _serializer.Deserialize<List<IfcEntityDefinition>>(json) ?? new List<IfcEntityDefinition>();
+            return JsonSerializer.Deserialize<List<IfcEntityDefinition>>(json, JsonOpts) ?? new List<IfcEntityDefinition>();
         }
 
         public IList<ClassificationSlot> LoadClassificationSlots()
         {
             var json = ReadEmbedded(ClassificationResource);
-            return _serializer.Deserialize<List<ClassificationSlot>>(json) ?? new List<ClassificationSlot>();
+            return JsonSerializer.Deserialize<List<ClassificationSlot>>(json, JsonOpts) ?? new List<ClassificationSlot>();
         }
 
         public string LoadDefaultProjectConfig()
         {
             var entities = LoadEntityLibrary();
-            return _serializer.Serialize(new { entitiesCount = entities.Count, schema = "IFC2x3", version = 1 });
+            return JsonSerializer.Serialize(new { entitiesCount = entities.Count, schema = "IFC2x3", version = 1 }, JsonOpts);
         }
 
         public void SaveProjectConfig(string json)

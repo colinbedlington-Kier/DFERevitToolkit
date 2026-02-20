@@ -1,5 +1,6 @@
 using System.Collections.Generic;
-using System.Web.Script.Serialization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Autodesk.Revit.DB;
 
 namespace DfEIfcNamer.Services
@@ -7,7 +8,13 @@ namespace DfEIfcNamer.Services
     public class CounterStateService
     {
         private const string CounterParam = "DfE_NamingCounters";
-        private readonly JavaScriptSerializer _serializer = new JavaScriptSerializer();
+        private static readonly JsonSerializerOptions JsonOpts = new()
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+            WriteIndented = true
+        };
 
         public IDictionary<string, int> LoadCounters(Document doc)
         {
@@ -18,7 +25,7 @@ namespace DfEIfcNamer.Services
                 return new Dictionary<string, int>();
             }
 
-            return _serializer.Deserialize<Dictionary<string, int>>(p.AsString()) ?? new Dictionary<string, int>();
+            return JsonSerializer.Deserialize<Dictionary<string, int>>(p.AsString(), JsonOpts) ?? new Dictionary<string, int>();
         }
 
         public void SaveCounters(Document doc, IDictionary<string, int> counters)
@@ -27,7 +34,7 @@ namespace DfEIfcNamer.Services
             var p = info.LookupParameter(CounterParam);
             if (p != null && !p.IsReadOnly)
             {
-                p.Set(_serializer.Serialize(counters));
+                p.Set(JsonSerializer.Serialize(counters, JsonOpts));
             }
         }
 
