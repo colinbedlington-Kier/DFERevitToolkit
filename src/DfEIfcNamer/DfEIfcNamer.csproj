@@ -30,7 +30,11 @@
     <Compile Include="**\*.cs" />
     <Page Include="UI\*.xaml" />
     <EmbeddedResource Include="Resources\*.json" />
-    <None Include="Resources\*.json">
+
+    <None Include="Resources\ifc2x3_entity_predefinedtypes.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="Resources\classification_slots.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="Resources\DfE_IfcNamer_SharedParameters.txt">
