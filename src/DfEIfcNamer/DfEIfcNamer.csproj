@@ -10,6 +10,10 @@
     <EnableDefaultItems>false</EnableDefaultItems>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <OutputPath>bin\Release\</OutputPath>
+  </PropertyGroup>
+
   <ItemGroup>
     <Reference Include="System.Web.Extensions" />
     <Reference Include="RevitAPI">
@@ -26,5 +30,11 @@
     <Compile Include="**\*.cs" />
     <Page Include="UI\*.xaml" />
     <EmbeddedResource Include="Resources\*.json" />
+    <None Include="Resources\*.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="Resources\DfE_IfcNamer_SharedParameters.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

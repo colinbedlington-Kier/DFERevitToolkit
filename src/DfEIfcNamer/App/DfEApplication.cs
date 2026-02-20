@@ -1,7 +1,7 @@
 using System;
 using System.Reflection;
-using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
 using DfEIfcNamer.ExternalEvents;
 using DfEIfcNamer.Services;
 using DfEIfcNamer.UI;
@@ -11,8 +11,8 @@ namespace DfEIfcNamer.App
 {
     public class DfEApplication : IExternalApplication
     {
-        private static DfEPaneView? _paneView;
-        private static DockablePaneId _paneId = new DockablePaneId(new Guid(AppSettings.DockablePaneId));
+        private static DfEPaneView _paneView;
+        private static readonly DockablePaneId PaneDockableId = new DockablePaneId(new Guid(AppSettings.DockablePaneId));
 
         public Result OnStartup(UIControlledApplication application)
         {
@@ -29,7 +29,7 @@ namespace DfEIfcNamer.App
             var viewModel = new MainViewModel(requestDispatcher, resourceService, counterService);
             _paneView = new DfEPaneView { DataContext = viewModel };
 
-            application.RegisterDockablePane(_paneId, AppSettings.DockablePaneTitle, _paneView);
+            application.RegisterDockablePane(PaneDockableId, AppSettings.DockablePaneTitle, _paneView);
             CreateRibbon(application);
             return Result.Succeeded;
         }
@@ -47,7 +47,7 @@ namespace DfEIfcNamer.App
             }
             catch
             {
-                // panel already exists
+                // Panel already exists.
             }
 
             RibbonPanel panel = null;
@@ -66,11 +66,14 @@ namespace DfEIfcNamer.App
             }
 
             var path = Assembly.GetExecutingAssembly().Location;
-            var data = new PushButtonData("DfEIfcNamer.ShowPane", AppSettings.RibbonButtonName, path, typeof(ShowPaneCommand).FullName);
-            panel.AddItem(data);
+            var showPaneButton = new PushButtonData("DfEIfcNamer.ShowPane", AppSettings.RibbonButtonName, path, typeof(ShowPaneCommand).FullName);
+            panel.AddItem(showPaneButton);
+
+            var diagnosticsButton = new PushButtonData("DfEIfcNamer.Diagnostics", "DfEIfcNamer: Diagnostics", path, typeof(DiagnosticsCommand).FullName);
+            panel.AddItem(diagnosticsButton);
         }
 
-        public static DockablePaneId PaneId => _paneId;
+        public static DockablePaneId PaneId => PaneDockableId;
     }
 
     public class ShowPaneCommand : IExternalCommand
@@ -79,6 +82,31 @@ namespace DfEIfcNamer.App
         {
             var pane = commandData.Application.GetDockablePane(DfEApplication.PaneId);
             pane.Show();
+            return Result.Succeeded;
+        }
+    }
+
+    public class DiagnosticsCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            var parameterService = new ParameterService();
+            var resourceService = new ResourceJsonService();
+
+            var assemblyPath = Assembly.GetExecutingAssembly().Location;
+            var sharedParamPath = parameterService.ResolveSharedParameterFilePath();
+            var sharedExists = System.IO.File.Exists(sharedParamPath);
+            var entitiesCount = resourceService.LoadEntityLibrary().Count;
+            var classificationCount = resourceService.LoadClassificationSlots().Count;
+
+            var body =
+                "Assembly Path:\n" + assemblyPath + "\n\n" +
+                "Shared Parameters Path:\n" + sharedParamPath + "\n" +
+                "Shared Parameters File Exists: " + sharedExists + "\n\n" +
+                "Embedded IFC2x3 Entities: " + entitiesCount + "\n" +
+                "Classification Slots: " + classificationCount;
+
+            TaskDialog.Show("DfE IFC Namer Diagnostics", body);
             return Result.Succeeded;
         }
     }
