@@ -1,0 +1,32 @@
+name: Build and Package Revit 2024 AllUsers
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Package AllUsers
+        shell: pwsh
+        run: ./build/package-allusers.ps1
+
+      - name: Upload dist zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: DfEIfcNamer-Revit2024-AllUsers
+          path: dist/Revit2024/DfEIfcNamer-Revit2024-AllUsers.zip
+          if-no-files-found: error
