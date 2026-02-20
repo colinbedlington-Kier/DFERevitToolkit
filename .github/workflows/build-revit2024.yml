@@ -1,0 +1,45 @@
+name: Build Revit 2024 Add-in Package
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REVIT_2024_API_PATH: ${{ github.workspace }}\lib\revit2024
+
+jobs:
+  build-and-package:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Validate Revit API DLLs available
+        shell: pwsh
+        run: |
+          $apiPath = if ($env:REVIT_2024_API_PATH) { $env:REVIT_2024_API_PATH } else { Join-Path $env:GITHUB_WORKSPACE 'lib\revit2024' }
+          $apiDll = Join-Path $apiPath 'RevitAPI.dll'
+          $apiUiDll = Join-Path $apiPath 'RevitAPIUI.dll'
+
+          if (-not (Test-Path $apiDll) -or -not (Test-Path $apiUiDll)) {
+            Write-Error "Revit 2024 API DLLs are missing. Expected: '$apiDll' and '$apiUiDll'. Provide them in lib/revit2024 or set REVIT_2024_API_PATH to a folder containing both files."
+            exit 1
+          }
+
+          Write-Host "Found Revit API DLLs in: $apiPath"
+
+      - name: Build and package
+        shell: pwsh
+        run: ./build/package.ps1
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DfEIfcNamer-Revit2024-AllUsers
+          path: dist/DfEIfcNamer-Revit2024-AllUsers.zip
+          if-no-files-found: error

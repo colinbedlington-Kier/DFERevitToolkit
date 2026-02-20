@@ -1,0 +1,11 @@
+[
+  { "SlotName": "Classification", "DisplayName": "Uniclass 2015", "NumberParam": "Code", "DescriptionParam": "Description" },
+  { "SlotName": "Classification(2)", "DisplayName": "CAWS", "NumberParam": "Code", "DescriptionParam": "Description" },
+  { "SlotName": "Classification(3)", "DisplayName": "NRM", "NumberParam": "Code", "DescriptionParam": "Description" },
+  { "SlotName": "Classification(4)", "DisplayName": "Omniclass", "NumberParam": "Code", "DescriptionParam": "Description" },
+  { "SlotName": "Classification(5)", "DisplayName": "COBie", "NumberParam": "Code", "DescriptionParam": "Description" },
+  { "SlotName": "Classification(6)", "DisplayName": "BSAB", "NumberParam": "Code", "DescriptionParam": "Description" },
+  { "SlotName": "Classification(7)", "DisplayName": "Custom 7", "NumberParam": "Code", "DescriptionParam": "Description" },
+  { "SlotName": "Classification(8)", "DisplayName": "Custom 8", "NumberParam": "Code", "DescriptionParam": "Description" },
+  { "SlotName": "Classification(9)", "DisplayName": "Custom 9", "NumberParam": "Code", "DescriptionParam": "Description" }
+]
