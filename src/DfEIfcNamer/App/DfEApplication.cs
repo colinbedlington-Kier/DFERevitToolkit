@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using DfEIfcNamer.ExternalEvents;
@@ -76,6 +77,8 @@ namespace DfEIfcNamer.App
         public static DockablePaneId PaneId => PaneDockableId;
     }
 
+    [Transaction(TransactionMode.Manual)]
+    [Regeneration(RegenerationOption.Manual)]
     public class ShowPaneCommand : IExternalCommand
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
@@ -86,6 +89,8 @@ namespace DfEIfcNamer.App
         }
     }
 
+    [Transaction(TransactionMode.Manual)]
+    [Regeneration(RegenerationOption.Manual)]
     public class DiagnosticsCommand : IExternalCommand
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
