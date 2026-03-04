@@ -12,31 +12,28 @@ namespace DfEIfcNamer.App
 {
     public class DfEApplication : IExternalApplication
     {
-        private static DfEPaneView _paneView;
-        private static readonly DockablePaneId PaneDockableId = new DockablePaneId(new Guid(AppSettings.DockablePaneId));
+        private static MainViewModel _viewModel;
 
         public Result OnStartup(UIControlledApplication application)
         {
-            var resourceService = new ResourceJsonService();
-            var counterService = new CounterStateService();
             var parameterService = new ParameterService();
-            var namingService = new NamingService(counterService);
-            var auditService = new AuditService();
+            var cobieSyncService = new CobieSyncService(parameterService);
+            var settingsStore = new ProjectSettingsStore();
 
-            var executionHandler = new RevitExecutionHandler(parameterService, namingService, resourceService, counterService, auditService);
+            var executionHandler = new RevitExecutionHandler(cobieSyncService, settingsStore);
             var externalEvent = ExternalEvent.Create(executionHandler);
             var requestDispatcher = new RevitRequestDispatcher(executionHandler, externalEvent);
 
-            var viewModel = new MainViewModel(requestDispatcher, resourceService, counterService);
-            _paneView = new DfEPaneView { DataContext = viewModel };
+            _viewModel = new MainViewModel(requestDispatcher);
+            _viewModel.RequestClose += () => WindowManager.CloseWindow();
 
-            application.RegisterDockablePane(PaneDockableId, AppSettings.DockablePaneTitle, _paneView);
             CreateRibbon(application);
             return Result.Succeeded;
         }
 
         public Result OnShutdown(UIControlledApplication application)
         {
+            WindowManager.CloseWindow();
             return Result.Succeeded;
         }
 
@@ -48,7 +45,6 @@ namespace DfEIfcNamer.App
             }
             catch
             {
-                // Panel already exists.
             }
 
             RibbonPanel panel = null;
@@ -67,24 +63,23 @@ namespace DfEIfcNamer.App
             }
 
             var path = Assembly.GetExecutingAssembly().Location;
-            var showPaneButton = new PushButtonData("DfEIfcNamer.ShowPane", AppSettings.RibbonButtonName, path, typeof(ShowPaneCommand).FullName);
-            panel.AddItem(showPaneButton);
-
-            var diagnosticsButton = new PushButtonData("DfEIfcNamer.Diagnostics", "DfEIfcNamer: Diagnostics", path, typeof(DiagnosticsCommand).FullName);
-            panel.AddItem(diagnosticsButton);
+            var showWindowButton = new PushButtonData("DfEIfcNamer.OpenWindow", AppSettings.RibbonButtonName, path, typeof(OpenMainWindowCommand).FullName);
+            panel.AddItem(showWindowButton);
         }
 
-        public static DockablePaneId PaneId => PaneDockableId;
+        public static void ShowMainWindow(UIApplication uiApp)
+        {
+            WindowManager.ShowOrActivate(uiApp, _viewModel);
+        }
     }
 
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
-    public class ShowPaneCommand : IExternalCommand
+    public class OpenMainWindowCommand : IExternalCommand
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            var pane = commandData.Application.GetDockablePane(DfEApplication.PaneId);
-            pane.Show();
+            DfEApplication.ShowMainWindow(commandData.Application);
             return Result.Succeeded;
         }
     }
@@ -96,22 +91,9 @@ namespace DfEIfcNamer.App
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             var parameterService = new ParameterService();
-            var resourceService = new ResourceJsonService();
-
-            var assemblyPath = Assembly.GetExecutingAssembly().Location;
             var sharedParamPath = parameterService.ResolveSharedParameterFilePath();
             var sharedExists = System.IO.File.Exists(sharedParamPath);
-            var entitiesCount = resourceService.LoadEntityLibrary().Count;
-            var classificationCount = resourceService.LoadClassificationSlots().Count;
-
-            var body =
-                "Assembly Path:\n" + assemblyPath + "\n\n" +
-                "Shared Parameters Path:\n" + sharedParamPath + "\n" +
-                "Shared Parameters File Exists: " + sharedExists + "\n\n" +
-                "Embedded IFC2x3 Entities: " + entitiesCount + "\n" +
-                "Classification Slots: " + classificationCount;
-
-            TaskDialog.Show("DfE IFC Namer Diagnostics", body);
+            TaskDialog.Show("DfE IFC Namer Diagnostics", "Shared Parameters File Exists: " + sharedExists + "\n" + sharedParamPath);
             return Result.Succeeded;
         }
     }

@@ -1,25 +1,37 @@
+using System;
 using System.Collections.Generic;
+using Autodesk.Revit.DB;
 using DfEIfcNamer.Models;
 
 namespace DfEIfcNamer.ExternalEvents
 {
     public enum RevitRequestId
     {
-        Bootstrap,
-        ApplyTypeNames,
-        ApplyInstanceNames,
-        ExportIfc,
-        ExportAudit,
-        ResetCounters,
-        SaveProjectConfig
+        CheckSetup,
+        AssignParameters,
+        LoadMapping,
+        SaveMapping,
+        ApplySync,
+        GetAvailableParameters,
+        GetCategories
     }
 
     public class RevitRequest
     {
         public RevitRequestId Id { get; set; }
-        public IList<TypeRowModel> TypeRows { get; set; }
-        public string NumberingMode { get; set; }
-        public string Scope { get; set; }
-        public string JsonPayload { get; set; }
+        public MappingSettings Settings { get; set; }
+        public IList<ElementId> CategoryIds { get; set; }
+        public Action<RevitResponse> Callback { get; set; }
+    }
+
+    public class RevitResponse
+    {
+        public SetupStatus SetupStatus { get; set; }
+        public MappingSettings Settings { get; set; }
+        public SyncResult SyncResult { get; set; }
+        public IList<ProjectParameterOption> InstanceParameters { get; set; }
+        public IList<ProjectParameterOption> TypeParameters { get; set; }
+        public IList<Category> Categories { get; set; }
+        public string Error { get; set; }
     }
 }

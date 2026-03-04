@@ -1,59 +1,84 @@
+using System;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using DfEIfcNamer.Models;
 using DfEIfcNamer.Services;
 
 namespace DfEIfcNamer.ExternalEvents
 {
     public class RevitExecutionHandler : IExternalEventHandler
     {
-        private readonly ParameterService _parameterService;
-        private readonly NamingService _namingService;
-        private readonly ResourceJsonService _resourceService;
-        private readonly CounterStateService _counterService;
-        private readonly AuditService _auditService;
+        private readonly CobieSyncService _cobieSyncService;
+        private readonly ProjectSettingsStore _settingsStore;
         private RevitRequest _request;
 
-        public RevitExecutionHandler(ParameterService parameterService, NamingService namingService, ResourceJsonService resourceService, CounterStateService counterService, AuditService auditService)
+        public RevitExecutionHandler(CobieSyncService cobieSyncService, ProjectSettingsStore settingsStore)
         {
-            _parameterService = parameterService;
-            _namingService = namingService;
-            _resourceService = resourceService;
-            _counterService = counterService;
-            _auditService = auditService;
+            _cobieSyncService = cobieSyncService;
+            _settingsStore = settingsStore;
         }
 
         public void SetRequest(RevitRequest request) => _request = request;
 
         public void Execute(UIApplication app)
         {
-            if (_request == null) return;
-
-            var doc = app.ActiveUIDocument?.Document;
-            if (doc == null) return;
-
-            switch (_request.Id)
+            var response = new RevitResponse();
+            try
             {
-                case RevitRequestId.Bootstrap:
-                    _parameterService.BootstrapSharedParameters(doc);
-                    break;
-                case RevitRequestId.ApplyTypeNames:
-                    _namingService.ApplyTypeNaming(doc, _request.TypeRows, _resourceService.LoadClassificationSlots());
-                    break;
-                case RevitRequestId.ApplyInstanceNames:
-                    _namingService.ApplyInstanceNaming(doc, _request.Scope, _request.NumberingMode, _resourceService.LoadEntityLibrary());
-                    break;
-                case RevitRequestId.ExportIfc:
-                    _auditService.ExportIfcWithDfEPreset(doc);
-                    break;
-                case RevitRequestId.ExportAudit:
-                    _auditService.ExportAuditCsv(doc);
-                    break;
-                case RevitRequestId.ResetCounters:
-                    _counterService.ResetCounters(doc);
-                    break;
-                case RevitRequestId.SaveProjectConfig:
-                    _resourceService.SaveProjectConfig(_request.JsonPayload);
-                    break;
+                if (_request == null) return;
+
+                var doc = app.ActiveUIDocument?.Document;
+                if (doc == null)
+                {
+                    response.Error = "No active document.";
+                    return;
+                }
+
+                switch (_request.Id)
+                {
+                    case RevitRequestId.CheckSetup:
+                        response.SetupStatus = _cobieSyncService.CheckSetup(doc, _request.CategoryIds);
+                        break;
+                    case RevitRequestId.AssignParameters:
+                        response.SetupStatus = _cobieSyncService.AssignParameters(doc, _request.CategoryIds);
+                        break;
+                    case RevitRequestId.GetAvailableParameters:
+                        response.InstanceParameters = _cobieSyncService.GetStringParameters(doc, false);
+                        response.TypeParameters = _cobieSyncService.GetStringParameters(doc, true);
+                        break;
+                    case RevitRequestId.GetCategories:
+                        response.Categories = _cobieSyncService.GetModelCategories(doc);
+                        break;
+                    case RevitRequestId.LoadMapping:
+                        response.Settings = _settingsStore.Load(doc) ?? new MappingSettings();
+                        break;
+                    case RevitRequestId.SaveMapping:
+                        using (var tx = new Transaction(doc, "DfE IFC Namer - Save Mapping"))
+                        {
+                            tx.Start();
+                            _settingsStore.Save(doc, _request.Settings ?? new MappingSettings());
+                            tx.Commit();
+                        }
+                        response.Settings = _request.Settings;
+                        break;
+                    case RevitRequestId.ApplySync:
+                        response.SyncResult = _cobieSyncService.ApplySync(doc, _request.Settings ?? new MappingSettings());
+                        using (var tx = new Transaction(doc, "DfE IFC Namer - Save Mapping"))
+                        {
+                            tx.Start();
+                            _settingsStore.Save(doc, _request.Settings ?? new MappingSettings());
+                            tx.Commit();
+                        }
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                response.Error = ex.Message;
+            }
+            finally
+            {
+                _request?.Callback?.Invoke(response);
             }
         }
 

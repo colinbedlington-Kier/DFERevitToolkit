@@ -1,19 +1,33 @@
-using System.Windows.Controls;
-using Autodesk.Revit.UI;
+using System.ComponentModel;
+using System.Windows;
 
 namespace DfEIfcNamer.UI
 {
-    public partial class DfEPaneView : UserControl, IDockablePaneProvider
+    public partial class DfEPaneView : Window
     {
+        private bool _allowClose;
+
         public DfEPaneView()
         {
             InitializeComponent();
         }
 
-        public void SetupDockablePane(DockablePaneProviderData data)
+        protected override void OnClosing(CancelEventArgs e)
         {
-            data.FrameworkElement = this;
-            data.InitialState = new DockablePaneState { DockPosition = DockPosition.Right };
+            if (!_allowClose)
+            {
+                e.Cancel = true;
+                Hide();
+                return;
+            }
+
+            base.OnClosing(e);
+        }
+
+        public void ForceClose()
+        {
+            _allowClose = true;
+            Close();
         }
     }
 }
