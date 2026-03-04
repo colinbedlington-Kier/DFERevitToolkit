@@ -1,92 +1,238 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
+using Autodesk.Revit.DB;
 using DfEIfcNamer.Commands;
 using DfEIfcNamer.ExternalEvents;
 using DfEIfcNamer.Models;
-using DfEIfcNamer.Services;
 
 namespace DfEIfcNamer.ViewModels
 {
     public class MainViewModel : ViewModelBase
     {
         private readonly RevitRequestDispatcher _dispatcher;
-        private readonly ResourceJsonService _resourceService;
 
-        public MainViewModel(RevitRequestDispatcher dispatcher, ResourceJsonService resourceService, CounterStateService counterService)
+        public MainViewModel(RevitRequestDispatcher dispatcher)
         {
             _dispatcher = dispatcher;
-            _resourceService = resourceService;
 
-            var entities = _resourceService.LoadEntityLibrary();
-            IfcEntities = new ObservableCollection<string>(entities.Select(x => x.IFCClassToken));
-            PredefinedTypes = new ObservableCollection<string>(entities.SelectMany(x => x.PredefinedTypes).Distinct());
-            Categories = new ObservableCollection<string> { "All" };
-            InstanceScopes = new ObservableCollection<string> { "Selection", "View", "Model", "Category" };
-            NumberingModes = new ObservableCollection<string> { "Sequential", "ElementId" };
+            ScopeOptions = new ObservableCollection<string>(new[] { "Entire Model", "Active View" });
+            OverwriteOptions = new ObservableCollection<string>(new[] { "Only write when target is blank", "Overwrite always" });
+            InstanceTargetOptions = new ObservableCollection<string>();
+            TypeTargetOptions = new ObservableCollection<string>();
+            Categories = new ObservableCollection<CategorySelectionItem>();
+            Logs = new ObservableCollection<string>();
 
-            TypeRows = new ObservableCollection<TypeRowModel>();
-            ProjectConfigJson = _resourceService.LoadDefaultProjectConfig();
-            SelectedScope = "Model";
-            SelectedNumberingMode = "Sequential";
-            InstancePreview = "Preview: AIR-000001";
+            InstanceSource = "IFCName";
+            TypeSource = "IFCName[Type]";
+            InstanceTarget = "COBie.Component.Name";
+            TypeTarget = "COBie.Type.Name";
+            SelectedScope = ScopeOptions[0];
+            SelectedOverwrite = OverwriteOptions[0];
 
-            ApplyTypesCommand = new RelayCommand(_ => DispatchTypes());
-            ApplyInstancesCommand = new RelayCommand(_ => DispatchInstances());
-            ExportIfcCommand = new RelayCommand(_ => _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ExportIfc }));
-            ExportAuditCommand = new RelayCommand(_ => _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ExportAudit }));
-            LoadConfigCommand = new RelayCommand(_ => ProjectConfigJson = _resourceService.LoadDefaultProjectConfig());
-            SaveConfigCommand = new RelayCommand(_ => _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.SaveProjectConfig, JsonPayload = ProjectConfigJson }));
-            ResetCountersCommand = new RelayCommand(_ => _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ResetCounters }));
+            CheckParametersCommand = new RelayCommand(_ => CheckParameters());
+            AssignParametersCommand = new RelayCommand(_ => AssignParameters());
+            ReloadMappingCommand = new RelayCommand(_ => LoadMapping());
+            SaveAndApplyCommand = new RelayCommand(_ => SaveAndApply());
+            ExitCommand = new RelayCommand(_ => RequestClose?.Invoke());
 
-            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.Bootstrap });
+            RefreshMetadata();
+            LoadMapping();
         }
 
-        public ObservableCollection<string> Categories { get; }
-        public ObservableCollection<string> IfcEntities { get; }
-        public ObservableCollection<string> PredefinedTypes { get; }
-        public ObservableCollection<TypeRowModel> TypeRows { get; }
-        public ObservableCollection<string> InstanceScopes { get; }
-        public ObservableCollection<string> NumberingModes { get; }
+        public event Action RequestClose;
 
-        public string SelectedCategory { get; set; }
-        public string SelectedIfcEntity { get; set; }
-        public string SelectedPredefinedType { get; set; }
-        public string SearchText { get; set; }
-        public string SelectedScope { get; set; }
-        public string SelectedNumberingMode { get; set; }
+        public ObservableCollection<string> ScopeOptions { get; }
+        public ObservableCollection<string> OverwriteOptions { get; }
+        public ObservableCollection<string> InstanceTargetOptions { get; }
+        public ObservableCollection<string> TypeTargetOptions { get; }
+        public ObservableCollection<CategorySelectionItem> Categories { get; }
+        public ObservableCollection<string> Logs { get; }
 
-        private string _instancePreview;
-        public string InstancePreview { get => _instancePreview; set { _instancePreview = value; RaisePropertyChanged(); } }
+        public string InstanceSource { get; set; }
+        public string TypeSource { get; set; }
+        public string InstanceTarget { get; set; }
+        public string TypeTarget { get; set; }
 
-        private string _projectConfigJson;
-        public string ProjectConfigJson { get => _projectConfigJson; set { _projectConfigJson = value; RaisePropertyChanged(); } }
+        private string _selectedScope;
+        public string SelectedScope { get => _selectedScope; set { _selectedScope = value; RaisePropertyChanged(); } }
 
-        public ICommand ApplyTypesCommand { get; }
-        public ICommand ApplyInstancesCommand { get; }
-        public ICommand ExportIfcCommand { get; }
-        public ICommand ExportAuditCommand { get; }
-        public ICommand LoadConfigCommand { get; }
-        public ICommand SaveConfigCommand { get; }
-        public ICommand ResetCountersCommand { get; }
+        private string _selectedOverwrite;
+        public string SelectedOverwrite { get => _selectedOverwrite; set { _selectedOverwrite = value; RaisePropertyChanged(); } }
 
-        private void DispatchTypes()
+        private string _setupStatus = "Not checked";
+        public string SetupStatus { get => _setupStatus; set { _setupStatus = value; RaisePropertyChanged(); } }
+
+        private string _coverageStatus = "Unknown";
+        public string CoverageStatus { get => _coverageStatus; set { _coverageStatus = value; RaisePropertyChanged(); } }
+
+        private string _documentStatus = "Document: n/a";
+        public string DocumentStatus { get => _documentStatus; set { _documentStatus = value; RaisePropertyChanged(); } }
+
+        private string _mappingLoadedStatus = "Mapping loaded: no";
+        public string MappingLoadedStatus { get => _mappingLoadedStatus; set { _mappingLoadedStatus = value; RaisePropertyChanged(); } }
+
+        private string _lastSyncStatus = "Last sync: never";
+        public string LastSyncStatus { get => _lastSyncStatus; set { _lastSyncStatus = value; RaisePropertyChanged(); } }
+
+        public ICommand CheckParametersCommand { get; }
+        public ICommand AssignParametersCommand { get; }
+        public ICommand ReloadMappingCommand { get; }
+        public ICommand SaveAndApplyCommand { get; }
+        public ICommand ExitCommand { get; }
+
+        private void RefreshMetadata()
         {
             _dispatcher.Raise(new RevitRequest
             {
-                Id = RevitRequestId.ApplyTypeNames,
-                TypeRows = TypeRows.ToList()
+                Id = RevitRequestId.GetAvailableParameters,
+                Callback = r =>
+                {
+                    InstanceTargetOptions.Clear();
+                    foreach (var p in r.InstanceParameters ?? Enumerable.Empty<ProjectParameterOption>())
+                    {
+                        InstanceTargetOptions.Add(p.Name);
+                    }
+
+                    TypeTargetOptions.Clear();
+                    foreach (var p in r.TypeParameters ?? Enumerable.Empty<ProjectParameterOption>())
+                    {
+                        TypeTargetOptions.Add(p.Name);
+                    }
+                }
+            });
+
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.GetCategories,
+                Callback = r =>
+                {
+                    Categories.Clear();
+                    foreach (var category in r.Categories ?? Enumerable.Empty<Category>())
+                    {
+                        Categories.Add(new CategorySelectionItem { Id = category.Id.IntegerValue, Name = category.Name, IsSelected = true });
+                    }
+                }
             });
         }
 
-        private void DispatchInstances()
+        private void CheckParameters()
         {
             _dispatcher.Raise(new RevitRequest
             {
-                Id = RevitRequestId.ApplyInstanceNames,
-                Scope = SelectedScope,
-                NumberingMode = SelectedNumberingMode
+                Id = RevitRequestId.CheckSetup,
+                CategoryIds = Categories.Where(c => c.IsSelected).Select(c => new ElementId(c.Id)).ToList(),
+                Callback = r =>
+                {
+                    if (r.Error != null)
+                    {
+                        SetupStatus = "⚠ " + r.Error;
+                        return;
+                    }
+
+                    var status = r.SetupStatus;
+                    SetupStatus = status.SharedParameterFileFound && status.InstanceParameterBound && status.TypeParameterBound ? "✓ Parameters configured" : "⚠ Setup required";
+                    CoverageStatus = $"Missing category bindings: {status.MissingCategoryBindings}";
+                    Logs.Add($"Check: {status.Message}");
+                }
             });
+        }
+
+        private void AssignParameters()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.AssignParameters,
+                CategoryIds = Categories.Where(c => c.IsSelected).Select(c => new ElementId(c.Id)).ToList(),
+                Callback = r =>
+                {
+                    if (r.Error != null)
+                    {
+                        SetupStatus = "⚠ " + r.Error;
+                        return;
+                    }
+
+                    SetupStatus = "✓ Parameters assigned";
+                    CoverageStatus = $"Missing category bindings: {r.SetupStatus.MissingCategoryBindings}";
+                    Logs.Add("Assign Parameters executed.");
+                }
+            });
+        }
+
+        private void LoadMapping()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.LoadMapping,
+                Callback = r =>
+                {
+                    var settings = r.Settings ?? new MappingSettings();
+                    InstanceTarget = string.IsNullOrWhiteSpace(settings.InstanceTarget) ? "COBie.Component.Name" : settings.InstanceTarget;
+                    TypeTarget = string.IsNullOrWhiteSpace(settings.TypeTarget) ? "COBie.Type.Name" : settings.TypeTarget;
+                    SelectedScope = settings.Scope == SyncScope.ActiveView ? ScopeOptions[1] : ScopeOptions[0];
+                    SelectedOverwrite = settings.OverwriteMode == OverwriteMode.OverwriteAlways ? OverwriteOptions[1] : OverwriteOptions[0];
+                    LastSyncStatus = settings.LastSyncUtc.HasValue ? "Last sync: " + settings.LastSyncUtc.Value.ToLocalTime().ToString("g") : "Last sync: never";
+                    MappingLoadedStatus = "Mapping loaded: yes";
+                    RaisePropertyChanged(nameof(InstanceTarget));
+                    RaisePropertyChanged(nameof(TypeTarget));
+                }
+            });
+        }
+
+        private void SaveAndApply()
+        {
+            Logs.Clear();
+            var settings = new MappingSettings
+            {
+                InstanceSource = InstanceSource,
+                TypeSource = TypeSource,
+                InstanceTarget = InstanceTarget,
+                TypeTarget = TypeTarget,
+                Scope = SelectedScope == "Active View" ? SyncScope.ActiveView : SyncScope.EntireModel,
+                OverwriteMode = SelectedOverwrite == "Overwrite always" ? OverwriteMode.OverwriteAlways : OverwriteMode.BlankOnly,
+                CategoryIds = Categories.Where(c => c.IsSelected).Select(c => c.Id).ToList()
+            };
+
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.ApplySync,
+                Settings = settings,
+                Callback = r =>
+                {
+                    if (r.Error != null)
+                    {
+                        Logs.Add("Error: " + r.Error);
+                        return;
+                    }
+
+                    LastSyncStatus = "Last sync: " + DateTime.Now.ToString("g");
+                    var summary = $"Instances Updated/Skipped/Failed: {r.SyncResult.InstancesUpdated}/{r.SyncResult.InstancesSkipped}/{r.SyncResult.InstancesFailed}; " +
+                                  $"Types Updated/Skipped/Failed: {r.SyncResult.TypesUpdated}/{r.SyncResult.TypesSkipped}/{r.SyncResult.TypesFailed}";
+                    Logs.Add(summary);
+                    foreach (var log in r.SyncResult.Logs)
+                    {
+                        Logs.Add($"{log.Severity}: {log.Message}");
+                    }
+                }
+            });
+        }
+    }
+
+    public class CategorySelectionItem : ViewModelBase
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                _isSelected = value;
+                RaisePropertyChanged();
+            }
         }
     }
 }
