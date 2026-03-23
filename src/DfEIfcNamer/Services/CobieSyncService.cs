@@ -191,9 +191,22 @@ namespace DfEIfcNamer.Services
             RunSharedParameterFileInspection(doc);
             RunExpectedDefinitionDiagnostics(doc);
             RunCategoryBindingDiagnostics(doc, selectedCategoryIds);
-            RunBindingAttemptDiagnostics(doc, selectedCategoryIds);
+            var bindingSummary = RunBindingAttemptDiagnostics(doc, selectedCategoryIds);
             RunSingleParameterBindDiagnostic(doc, selectedCategoryIds, "IFCName");
             var setup = CheckSetup(doc, selectedCategoryIds);
+            if (bindingSummary != null && bindingSummary.ParameterResults.Any())
+            {
+                setup.ParameterResults = bindingSummary.ParameterResults.ToList();
+                setup.ParametersRequestedCount = bindingSummary.ParametersRequestedCount;
+                setup.ParametersFoundInSharedFileCount = bindingSummary.ParametersFoundInSharedFileCount;
+                setup.InsertSucceededCount = bindingSummary.InsertSucceededCount;
+                setup.ReInsertSucceededCount = bindingSummary.ReInsertSucceededCount;
+                setup.VerifiedBoundCount = bindingSummary.VerifiedBoundCount;
+                setup.VerificationFailedCount = bindingSummary.VerificationFailedCount;
+                setup.FailedBindingInsertCount = bindingSummary.FailedBindingInsertCount;
+                setup.Message = "Diagnostic binding run complete (transaction rolled back intentionally).";
+            }
+
             UpdateDiagnosticsSummaryFromSetup(doc, setup);
             _diagnostics.AddInfo("FullDiagnostics", "Completed full diagnostics run.");
         }
@@ -686,41 +699,50 @@ namespace DfEIfcNamer.Services
             public string GroupName { get; }
         }
 
-        private void RunBindingAttemptDiagnostics(Document doc, IList<ElementId> selectedCategoryIds)
+        private ParameterService.ParameterBindingSummary RunBindingAttemptDiagnostics(Document doc, IList<ElementId> selectedCategoryIds)
         {
             var selectedCategories = selectedCategoryIds?.Select(id => Category.GetCategory(doc, id)).Where(c => c != null).ToList();
+            ParameterService.ParameterBindingSummary bindingSummary = null;
             try
             {
                 _diagnostics.AddInfo("BindingAttempt", "Starting diagnostic binding transaction.");
-                ExecuteDiagnosticBindingTransaction(doc, "DfE IFC Namer - Diagnostics Binding Attempt", () =>
+                bindingSummary = _parameterService.DiagnoseIfcNameParameters(doc, selectedCategories, rollbackAtEnd: true);
+                foreach (var result in bindingSummary.ParameterResults)
                 {
-                    var bindingSummary = _parameterService.EnsureIfcNameParameters(doc, selectedCategories);
-                    foreach (var result in bindingSummary.ParameterResults)
+                    _diagnostics.AddInfo("BindingAttempt", "Binding attempt result.", new
                     {
-                        _diagnostics.AddInfo("BindingAttempt", "Binding attempt result.", new
-                        {
-                            RequestedName = result.Name,
-                            Resolved = result.FoundInSharedParameterFile,
-                            BindingType = result.ExpectedBindingType,
-                            CategoryCount = bindingSummary.IncludedCategoriesCount,
-                            ParameterGroup = result.ExpectedBindingType == "project info" ? GroupTypeId.Data.TypeId : GroupTypeId.Ifc.TypeId,
-                            InsertAttempted = true,
-                            result.InsertSucceeded,
-                            result.ReInsertSucceeded,
-                            ExistingBindingWasPresent = !result.InsertSucceeded,
-                            result.FinalBoundState,
-                            result.Notes
-                        });
-                    }
-                },
-                committed: () => _diagnostics.AddDebug("BindingAttempt", "Diagnostic binding transaction committed."),
-                rolledBack: () => _diagnostics.AddDebug("BindingAttempt", "Diagnostic binding transaction rolled back."),
-                rollbackAtEnd: true);
+                        result.RequestedName,
+                        result.ResolvedDefinitionName,
+                        result.ResolvedGroup,
+                        BindingType = result.BindingType,
+                        result.InsertAttempted,
+                        result.InsertSucceeded,
+                        result.ReInsertAttempted,
+                        result.ReInsertSucceeded,
+                        ExistingBindingPresent = result.ExistingBindingPresent,
+                        result.DiagnosticRollbackUsed,
+                        result.PersistedToModel,
+                        result.VerificationStatus,
+                        result.Notes
+                    });
+                }
+
+                _diagnostics.AddInfo("BindingAttempt", "Diagnostic binding aggregate.", new
+                {
+                    bindingSummary.ParametersRequestedCount,
+                    bindingSummary.ParametersFoundInSharedFileCount,
+                    bindingSummary.InsertSucceededCount,
+                    bindingSummary.ReInsertSucceededCount,
+                    bindingSummary.VerifiedBoundCount,
+                    bindingSummary.VerificationFailedCount
+                });
             }
             catch (Exception ex)
             {
                 _diagnostics.AddError("BindingAttempt", "Binding attempt diagnostics failed.", ex);
             }
+
+            return bindingSummary;
         }
 
         private static string BuildParameterSummaryMessage(SetupStatus status, bool sharedParameterLoaded, bool hasErrors)
@@ -1129,6 +1151,8 @@ namespace DfEIfcNamer.Services
                 var result = new ParameterBindingResult
                 {
                     Name = expected.DisplayName,
+                    RequestedName = expected.DisplayName,
+                    BindingType = expected.ExpectedBindingType,
                     ExpectedBindingType = expected.ExpectedBindingType,
                     FoundInSharedParameterFile = sharedDefinitionMatches.ContainsKey(expected.DisplayName),
                     BindingAction = "Verify"
@@ -1136,6 +1160,8 @@ namespace DfEIfcNamer.Services
 
                 if (sharedDefinitionMatches.TryGetValue(expected.DisplayName, out var resolved))
                 {
+                    result.ResolvedDefinitionName = resolved.Definition.Name;
+                    result.ResolvedGroup = resolved.GroupName;
                     result.Notes = $"ResolvedName='{resolved.Definition.Name}', ResolvedGroup='{resolved.GroupName}'.";
                 }
                 else
@@ -1146,6 +1172,8 @@ namespace DfEIfcNamer.Services
                 if (!TryResolveBinding(bindingMap, expected.LookupNames, out var definitionName, out var binding))
                 {
                     result.FinalBoundState = false;
+                    result.PersistedToModel = false;
+                    result.VerificationStatus = "failed";
                     result.Notes = AppendNote(result.Notes, "Definition not bound in document.");
                     results.Add(result);
                     continue;
@@ -1160,6 +1188,8 @@ namespace DfEIfcNamer.Services
                     : BindingCoversCategories(binding, modelCategories);
 
                 result.FinalBoundState = kindOk && categoriesOk;
+                result.PersistedToModel = result.FinalBoundState;
+                result.VerificationStatus = result.FinalBoundState ? "verified" : "failed";
                 if (!kindOk)
                 {
                     result.Notes = AppendNote(result.Notes, $"Binding kind mismatch for definition '{definitionName}'.");

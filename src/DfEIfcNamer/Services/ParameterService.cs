@@ -61,7 +61,23 @@ namespace DfEIfcNamer.Services
 
         public ParameterBindingSummary EnsureIfcNameParameters(Document doc, IList<Category> categories)
         {
+            return ExecuteIfcNameParameterBinding(doc, categories, diagnosticOnly: false, rollbackAtEnd: false);
+        }
+
+        public ParameterBindingSummary DiagnoseIfcNameParameters(Document doc, IList<Category> categories, bool rollbackAtEnd = true)
+        {
+            return ExecuteIfcNameParameterBinding(doc, categories, diagnosticOnly: true, rollbackAtEnd: rollbackAtEnd);
+        }
+
+        private ParameterBindingSummary ExecuteIfcNameParameterBinding(
+            Document doc,
+            IList<Category> categories,
+            bool diagnosticOnly,
+            bool rollbackAtEnd)
+        {
             var summary = new ParameterBindingSummary();
+            summary.DiagnosticOnly = diagnosticOnly;
+            summary.DiagnosticRollbackUsed = diagnosticOnly && rollbackAtEnd;
             try
             {
                 var sharedPath = ResolveSharedParameterFilePath();
@@ -120,12 +136,30 @@ namespace DfEIfcNamer.Services
 
                 RunBindingInTransaction(doc, summary, () =>
                 {
-                    BindParameterSet(doc, definitionLookup, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary);
-                    BindParameterSet(doc, definitionLookup, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary);
-                    BindParameterSet(doc, definitionLookup, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary);
-                });
+                    BindParameterSet(doc, definitionLookup, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary, diagnosticOnly, rollbackAtEnd);
+                    BindParameterSet(doc, definitionLookup, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary, diagnosticOnly, rollbackAtEnd);
+                    BindParameterSet(doc, definitionLookup, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary, diagnosticOnly, rollbackAtEnd);
+                }, rollbackAtEnd);
 
-                VerifyBindings(doc, modelCategories, projectInfoCategory, summary);
+                if (diagnosticOnly && rollbackAtEnd)
+                {
+                    foreach (var result in summary.ParameterResults)
+                    {
+                        result.PersistedToModel = false;
+                        result.VerificationStatus = "n/a - diagnostic rollback";
+                        result.FinalBoundState = result.InsertSucceeded || result.ReInsertSucceeded;
+                        result.BindingAction = result.InsertSucceeded
+                            ? "Insert"
+                            : result.ReInsertSucceeded
+                                ? "ReInsert"
+                                : result.BindingAction;
+                    }
+                }
+                else
+                {
+                    VerifyBindings(doc, modelCategories, projectInfoCategory, summary);
+                }
+
                 PopulateSummaryCounts(summary);
             }
             catch (Exception ex)
@@ -147,10 +181,14 @@ namespace DfEIfcNamer.Services
                 summary.ParameterResults.Add(new ParameterBindingResult
                 {
                     Name = spec.DisplayName,
+                    RequestedName = spec.DisplayName,
+                    BindingType = spec.ExpectedBindingType,
                     ExpectedBindingType = spec.ExpectedBindingType,
                     FoundInSharedParameterFile = false,
                     InsertSucceeded = false,
                     ReInsertSucceeded = false,
+                    PersistedToModel = false,
+                    VerificationStatus = "failed",
                     FinalBoundState = false,
                     BindingAction = "None",
                     Notes = string.IsNullOrWhiteSpace(reason) ? "Binding prerequisites were not met." : reason
@@ -214,14 +252,19 @@ namespace DfEIfcNamer.Services
             IEnumerable<ParameterSpec> specs,
             CategorySet categorySet,
             ForgeTypeId groupTypeId,
-            ParameterBindingSummary summary)
+            ParameterBindingSummary summary,
+            bool diagnosticOnly,
+            bool rollbackAtEnd)
         {
             foreach (var spec in specs)
             {
                 var result = new ParameterBindingResult
                 {
                     Name = spec.DisplayName,
+                    RequestedName = spec.DisplayName,
                     ExpectedBindingType = spec.ExpectedBindingType,
+                    BindingType = spec.ExpectedBindingType,
+                    DiagnosticRollbackUsed = diagnosticOnly && rollbackAtEnd,
                     BindingAction = "None"
                 };
 
@@ -229,6 +272,8 @@ namespace DfEIfcNamer.Services
                 {
                     var definition = ResolveDefinition(definitionLookup, spec, out var resolvedName, out var resolvedGroup);
                     result.FoundInSharedParameterFile = definition != null;
+                    result.ResolvedDefinitionName = resolvedName;
+                    result.ResolvedGroup = resolvedGroup;
                     result.Notes = $"Requested='{spec.DisplayName}', BindingType='{spec.ExpectedBindingType}', TransactionStarted=True.";
 
                     if (definition == null)
@@ -243,6 +288,7 @@ namespace DfEIfcNamer.Services
                         : doc.Application.Create.NewInstanceBinding(categorySet);
 
                     var existingBindingPresent = ResolveBinding(GetBindingMap(doc), spec, out var existingDefinition, out var existingBinding);
+                    result.ExistingBindingPresent = existingBindingPresent;
                     result.Notes = AppendNote(result.Notes, $"ResolvedName='{resolvedName}', ResolvedGroup='{resolvedGroup}', ExistingBindingPresent={existingBindingPresent}.");
                     if (existingBindingPresent)
                     {
@@ -251,6 +297,7 @@ namespace DfEIfcNamer.Services
                         result.Notes = AppendNote(result.Notes, $"ExistingBindingKind={existingBindingKind}, ExistingBindingCategoryCount={existingCategoryCount}, ExistingDefinitionName='{existingDefinition}'.");
                     }
 
+                    result.InsertAttempted = true;
                     result.InsertSucceeded = doc.ParameterBindings.Insert(definition, binding, groupTypeId);
                     result.Notes = AppendNote(result.Notes, $"InsertResult={result.InsertSucceeded}.");
                     if (result.InsertSucceeded)
@@ -260,6 +307,7 @@ namespace DfEIfcNamer.Services
                     else
                     {
                         result.Notes = AppendNote(result.Notes, "Insert returned false; existing binding present.");
+                        result.ReInsertAttempted = true;
                         result.ReInsertSucceeded = doc.ParameterBindings.ReInsert(definition, binding, groupTypeId);
                         result.Notes = AppendNote(result.Notes, $"ReInsertResult={result.ReInsertSucceeded}.");
                         result.BindingAction = result.ReInsertSucceeded ? "ReInsert" : "Insert/ReInsert failed";
@@ -286,6 +334,12 @@ namespace DfEIfcNamer.Services
                     summary.FailedBindingInsertCount++;
                 }
 
+                result.PersistedToModel = !(diagnosticOnly && rollbackAtEnd) && (result.InsertSucceeded || result.ReInsertSucceeded);
+                if (!diagnosticOnly || !rollbackAtEnd)
+                {
+                    result.VerificationStatus = "pending";
+                }
+
                 summary.ParameterResults.Add(result);
             }
         }
@@ -293,7 +347,8 @@ namespace DfEIfcNamer.Services
         private static void RunBindingInTransaction(
             Document doc,
             ParameterBindingSummary summary,
-            Action operation)
+            Action operation,
+            bool rollbackAtEnd)
         {
             if (doc.IsModifiable)
             {
@@ -307,7 +362,14 @@ namespace DfEIfcNamer.Services
                 try
                 {
                     operation();
-                    tx.Commit();
+                    if (rollbackAtEnd)
+                    {
+                        tx.RollBack();
+                    }
+                    else
+                    {
+                        tx.Commit();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -398,6 +460,8 @@ namespace DfEIfcNamer.Services
                 if (!bound || binding == null)
                 {
                     result.FinalBoundState = false;
+                    result.PersistedToModel = false;
+                    result.VerificationStatus = "failed";
                     result.Notes = AppendNote(result.Notes, "Definition not bound in document.");
                     continue;
                 }
@@ -417,6 +481,8 @@ namespace DfEIfcNamer.Services
                 }
 
                 result.FinalBoundState = kindOk && categoriesOk;
+                result.PersistedToModel = result.FinalBoundState;
+                result.VerificationStatus = result.FinalBoundState ? "verified" : "failed";
 
                 if (!kindOk)
                 {
@@ -583,8 +649,8 @@ namespace DfEIfcNamer.Services
             summary.ParametersFoundInSharedFileCount = summary.ParameterResults.Count(x => x.FoundInSharedParameterFile);
             summary.InsertSucceededCount = summary.ParameterResults.Count(x => x.InsertSucceeded);
             summary.ReInsertSucceededCount = summary.ParameterResults.Count(x => x.ReInsertSucceeded);
-            summary.VerifiedBoundCount = summary.ParameterResults.Count(x => x.FinalBoundState);
-            summary.VerificationFailedCount = summary.ParameterResults.Count(x => !x.FinalBoundState);
+            summary.VerifiedBoundCount = summary.ParameterResults.Count(x => string.Equals(x.VerificationStatus, "verified", StringComparison.OrdinalIgnoreCase));
+            summary.VerificationFailedCount = summary.ParameterResults.Count(x => string.Equals(x.VerificationStatus, "failed", StringComparison.OrdinalIgnoreCase));
         }
 
         public class ParameterBindingSummary
@@ -599,6 +665,8 @@ namespace DfEIfcNamer.Services
             public int ReInsertSucceededCount { get; set; }
             public int VerifiedBoundCount { get; set; }
             public int VerificationFailedCount { get; set; }
+            public bool DiagnosticOnly { get; set; }
+            public bool DiagnosticRollbackUsed { get; set; }
             public string ErrorMessage { get; set; }
             public IList<string> IncludedCategoryNames { get; } = new List<string>();
             public IList<string> SharedParameterGroupNames { get; } = new List<string>();
