@@ -72,8 +72,10 @@ namespace DfEIfcNamer.Services
 
                 status.InstanceParameterBound = IsParameterBound(doc, new[] { "IFCName", "IfcName" }, false, categories);
                 status.TypeParameterBound = IsParameterBound(doc, new[] { "IFCName [Type]", "IFCName[Type]", "IfcName[Type]" }, true, categories);
-                status.ParameterResults = BuildVerificationResults(doc, categories).ToList();
+                var sharedFileMatches = ResolveExpectedDefinitionsInSharedFile(doc);
+                status.ParameterResults = BuildVerificationResults(doc, categories, sharedFileMatches).ToList();
                 status.ParametersRequestedCount = status.ParameterResults.Count;
+                status.ParametersFoundInSharedFileCount = status.ParameterResults.Count(x => x.FoundInSharedParameterFile);
                 status.VerifiedBoundCount = status.ParameterResults.Count(x => x.FinalBoundState);
                 status.VerificationFailedCount = status.ParameterResults.Count(x => !x.FinalBoundState);
                 status.InvalidIfcMetadataNotes = ValidateIfcMetadataAgainstLibrary(doc, entityLibrary);
@@ -276,35 +278,40 @@ namespace DfEIfcNamer.Services
             }
 
             var groups = file.Groups.Cast<DefinitionGroup>().ToList();
-            var byGroup = groups.ToDictionary(
-                g => g.Name,
-                g => g.Definitions.Cast<Definition>().ToList(),
-                StringComparer.OrdinalIgnoreCase);
-            var allDefinitionNames = byGroup.SelectMany(k => k.Value.Select(d => d.Name)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var lookup = BuildSharedParameterLookup(groups);
+            _diagnostics.AddInfo("ExpectedDefinitions", "Shared parameter groups available for lookup.", new
+            {
+                GroupCount = groups.Count,
+                Groups = groups.Select(g => new
+                {
+                    Group = g.Name,
+                    DefinitionCount = g.Definitions.Size
+                }).ToList()
+            });
             _diagnostics.Summary.TotalExpectedParameters = ExpectedParameters.Length;
 
             foreach (var expected in ExpectedParameters)
             {
-                var inAnyGroup = allDefinitionNames.Any(n => expected.LookupNames.Any(l => string.Equals(l, n, StringComparison.OrdinalIgnoreCase)));
-                var exact = groups
-                    .Select(g => new
-                    {
-                        Group = g.Name,
-                        Definition = expected.LookupNames
-                            .Select(candidate => g.Definitions.get_Item(candidate) as Definition)
-                            .FirstOrDefault(def => def != null)
-                    })
-                    .FirstOrDefault(x => x.Definition != null);
-                var ciMatches = allDefinitionNames.Where(n => expected.LookupNames.Any(l => string.Equals(l, n, StringComparison.OrdinalIgnoreCase))).ToList();
-                var trimmedMatches = allDefinitionNames.Where(n => expected.LookupNames.Any(l => string.Equals(l?.Trim(), n?.Trim(), StringComparison.OrdinalIgnoreCase))).ToList();
+                var match = ResolveDefinitionAcrossGroups(lookup, expected.LookupNames, null);
+                var inAnyGroup = match != null;
+                var ciMatches = lookup.Values
+                    .Select(v => v.Definition.Name)
+                    .Where(n => expected.LookupNames.Any(l => string.Equals(l, n, StringComparison.OrdinalIgnoreCase)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var trimmedMatches = lookup.Values
+                    .Select(v => v.Definition.Name)
+                    .Where(n => expected.LookupNames.Any(l => string.Equals(l?.Trim(), n?.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
-                if (exact != null)
+                if (match != null)
                 {
                     _diagnostics.Summary.TotalParametersFound++;
                     _diagnostics.Summary.LastSuccessfulParameterFound = expected.DisplayName;
                 }
 
-                var resolvedName = exact?.Definition?.Name;
+                var resolvedName = match?.Definition?.Name;
                 var fallbackUsed = !string.IsNullOrWhiteSpace(resolvedName) &&
                                    !string.Equals(resolvedName, expected.DisplayName, StringComparison.Ordinal);
                 if (fallbackUsed)
@@ -320,12 +327,8 @@ namespace DfEIfcNamer.Services
                 {
                     Parameter = expected.DisplayName,
                     BindingScope = expected.ExpectedBindingType,
-                    ExpectedGroup = "DfE IFC Namer",
-                    GroupExists = byGroup.ContainsKey("DfE IFC Namer"),
-                    DefinitionExistsInExpectedGroup = byGroup.ContainsKey("DfE IFC Namer") &&
-                                                      expected.LookupNames.Any(n => byGroup["DfE IFC Namer"].Any(d => string.Equals(d.Name, n, StringComparison.Ordinal))),
                     DefinitionExistsAnyGroup = inAnyGroup,
-                    FoundGroup = exact?.Group,
+                    FoundGroup = match?.GroupName,
                     ResolvedName = resolvedName,
                     LegacyFallbackUsed = fallbackUsed,
                     NearMatchesCaseInsensitive = ciMatches,
@@ -386,18 +389,28 @@ namespace DfEIfcNamer.Services
             _diagnostics.AddInfo("SingleParameterBind", "Testing single parameter binding.", new { RequestedParameter = parameterName, TargetParameter = spec.DisplayName });
             try
             {
-                var sharedPath = _parameterService.ResolveSharedParameterFilePath();
                 var file = TryOpenSharedParameterFileWithDiagnostics(doc, "SingleParameterBind");
                 if (file == null)
                 {
                     return;
                 }
 
-                var definition = file.Groups
-                    .Cast<DefinitionGroup>()
-                    .SelectMany(g => spec.LookupNames.Select(n => g.Definitions.get_Item(n) as ExternalDefinition).Where(d => d != null))
-                    .FirstOrDefault();
-                if (definition == null)
+                var groups = file.Groups.Cast<DefinitionGroup>().ToList();
+                var lookup = BuildSharedParameterLookup(groups);
+                _diagnostics.AddInfo("SingleParameterBind", "Available groups and definition counts.", new
+                {
+                    Groups = groups.Select(g => new { Group = g.Name, DefinitionCount = g.Definitions.Size }).ToList()
+                });
+                var match = ResolveDefinitionAcrossGroups(lookup, spec.LookupNames, null);
+                _diagnostics.AddInfo("SingleParameterBind", "Single parameter lookup result.", new
+                {
+                    Parameter = spec.DisplayName,
+                    Candidates = spec.LookupNames,
+                    MatchFound = match != null,
+                    MatchedGroup = match?.GroupName,
+                    MatchedDefinition = match?.Definition?.Name
+                });
+                if (match == null)
                 {
                     _diagnostics.AddError("SingleParameterBind", "Definition could not be resolved for single parameter test.", null, new { spec.DisplayName, Candidates = spec.LookupNames });
                     return;
@@ -410,13 +423,43 @@ namespace DfEIfcNamer.Services
                     catSet.Insert(category);
                 }
 
+                var existingBindingPresent = TryResolveBinding(GetBindingMap(doc), spec.LookupNames, out var existingDefinitionName, out var existingBinding);
+                var existingBindingKind = existingBinding is TypeBinding ? "type" : existingBinding is InstanceBinding ? "instance" : "n/a";
+                var existingBindingCategoryCount = existingBinding?.Categories?.Size ?? 0;
                 var binding = spec.ExpectedBindingType == "type"
                     ? (Binding)doc.Application.Create.NewTypeBinding(catSet)
                     : doc.Application.Create.NewInstanceBinding(catSet);
-                var insert = doc.ParameterBindings.Insert(definition, binding, GroupTypeId.Ifc);
-                var reinsert = insert ? false : doc.ParameterBindings.ReInsert(definition, binding, GroupTypeId.Ifc);
-                var map = GetBindingMap(doc);
-                var verified = spec.LookupNames.Any(name => map.ContainsKey(name));
+
+                var insert = false;
+                var reinsert = false;
+                var transactionStarted = false;
+                var transactionCommitted = false;
+                var transactionRolledBack = false;
+                ExecuteDiagnosticBindingTransaction(doc, "DfE IFC Namer - Single Parameter Diagnostic", () =>
+                {
+                    transactionStarted = true;
+                    _diagnostics.AddInfo("SingleParameterBind", "Diagnostic transaction started.", new { Parameter = spec.DisplayName });
+                    insert = doc.ParameterBindings.Insert(match.Definition, binding, GroupTypeId.Ifc);
+                    _diagnostics.AddInfo("SingleParameterBind", "Insert attempted.", new { Parameter = spec.DisplayName, InsertResult = insert });
+                    if (!insert)
+                    {
+                        reinsert = doc.ParameterBindings.ReInsert(match.Definition, binding, GroupTypeId.Ifc);
+                        _diagnostics.AddInfo("SingleParameterBind", "ReInsert attempted.", new { Parameter = spec.DisplayName, ReInsertResult = reinsert });
+                    }
+                },
+                committed: () =>
+                {
+                    transactionCommitted = true;
+                    _diagnostics.AddInfo("SingleParameterBind", "Diagnostic transaction committed.");
+                },
+                rolledBack: () =>
+                {
+                    transactionRolledBack = true;
+                    _diagnostics.AddInfo("SingleParameterBind", "Diagnostic transaction rolled back.");
+                },
+                rollbackAtEnd: true);
+
+                var verified = TryResolveBinding(GetBindingMap(doc), spec.LookupNames, out _, out _);
 
                 if (insert || reinsert)
                 {
@@ -440,9 +483,18 @@ namespace DfEIfcNamer.Services
                     BindingKind = spec.ExpectedBindingType,
                     Categories = categories.Select(c => c.Name).ToList(),
                     CategoryCount = categories.Count,
+                    RequestedName = spec.DisplayName,
+                    ResolvedDefinitionName = match.Definition.Name,
+                    ResolvedGroup = match.GroupName,
+                    ExistingBindingPresent = existingBindingPresent,
+                    ExistingBindingKind = existingBindingKind,
+                    ExistingBindingDefinition = existingDefinitionName,
+                    ExistingBindingCategoryCount = existingBindingCategoryCount,
+                    TransactionStarted = transactionStarted,
+                    TransactionCommitted = transactionCommitted,
+                    TransactionRolledBack = transactionRolledBack,
                     Insert = insert,
                     ReInsert = reinsert,
-                    ExistingBindingPresent = !insert,
                     Verified = verified
                 });
             }
@@ -450,6 +502,123 @@ namespace DfEIfcNamer.Services
             {
                 _diagnostics.Summary.LastFailedBinding = spec.DisplayName;
                 _diagnostics.AddError("SingleParameterBind", "Single parameter bind test failed.", ex);
+            }
+        }
+
+        private static Dictionary<string, SharedDefinitionMatch> BuildSharedParameterLookup(IEnumerable<DefinitionGroup> groups)
+        {
+            var lookup = new Dictionary<string, SharedDefinitionMatch>(StringComparer.OrdinalIgnoreCase);
+            foreach (var group in groups)
+            {
+                foreach (var definition in group.Definitions.Cast<Definition>().OfType<ExternalDefinition>())
+                {
+                    if (!lookup.ContainsKey(definition.Name))
+                    {
+                        lookup[definition.Name] = new SharedDefinitionMatch(definition, group.Name);
+                    }
+
+                    var guidKey = definition.GUID.ToString("D");
+                    if (!lookup.ContainsKey(guidKey))
+                    {
+                        lookup[guidKey] = new SharedDefinitionMatch(definition, group.Name);
+                    }
+                }
+            }
+
+            return lookup;
+        }
+
+        private static SharedDefinitionMatch ResolveDefinitionAcrossGroups(
+            IReadOnlyDictionary<string, SharedDefinitionMatch> lookup,
+            IEnumerable<string> candidateNames,
+            string preferredGuid)
+        {
+            if (!string.IsNullOrWhiteSpace(preferredGuid) &&
+                lookup.TryGetValue(preferredGuid, out var guidMatch))
+            {
+                return guidMatch;
+            }
+
+            foreach (var candidate in candidateNames ?? Enumerable.Empty<string>())
+            {
+                if (lookup.TryGetValue(candidate, out var nameMatch))
+                {
+                    return nameMatch;
+                }
+            }
+
+            return null;
+        }
+
+        private static void ExecuteDiagnosticBindingTransaction(
+            Document doc,
+            string transactionName,
+            Action operation,
+            Action committed,
+            Action rolledBack,
+            bool rollbackAtEnd)
+        {
+            if (doc.IsModifiable)
+            {
+                using (var subTransaction = new SubTransaction(doc))
+                {
+                    subTransaction.Start();
+                    try
+                    {
+                        operation();
+                        if (rollbackAtEnd)
+                        {
+                            subTransaction.RollBack();
+                            rolledBack?.Invoke();
+                        }
+                        else
+                        {
+                            subTransaction.Commit();
+                            committed?.Invoke();
+                        }
+                    }
+                    catch
+                    {
+                        if (subTransaction.GetStatus() == TransactionStatus.Started)
+                        {
+                            subTransaction.RollBack();
+                            rolledBack?.Invoke();
+                        }
+
+                        throw;
+                    }
+                }
+
+                return;
+            }
+
+            using (var transaction = new Transaction(doc, transactionName))
+            {
+                transaction.Start();
+                try
+                {
+                    operation();
+                    if (rollbackAtEnd)
+                    {
+                        transaction.RollBack();
+                        rolledBack?.Invoke();
+                    }
+                    else
+                    {
+                        transaction.Commit();
+                        committed?.Invoke();
+                    }
+                }
+                catch
+                {
+                    if (transaction.GetStatus() == TransactionStatus.Started)
+                    {
+                        transaction.RollBack();
+                        rolledBack?.Invoke();
+                    }
+
+                    throw;
+                }
             }
         }
 
@@ -484,10 +653,15 @@ namespace DfEIfcNamer.Services
             try
             {
                 var file = doc.Application.OpenSharedParameterFile();
-                _diagnostics.Summary.OpenSharedParameterFileSucceeded = file != null;
+                var hasGroups = file != null && file.Groups != null && file.Groups.Size > 0;
+                _diagnostics.Summary.OpenSharedParameterFileSucceeded = hasGroups;
                 if (file == null)
                 {
                     _diagnostics.AddError(stage, "OpenSharedParameterFile returned null.");
+                }
+                else if (!hasGroups)
+                {
+                    _diagnostics.AddError(stage, "OpenSharedParameterFile succeeded but no groups were found.");
                 }
 
                 return file;
@@ -500,23 +674,37 @@ namespace DfEIfcNamer.Services
             }
         }
 
+        private sealed class SharedDefinitionMatch
+        {
+            public SharedDefinitionMatch(ExternalDefinition definition, string groupName)
+            {
+                Definition = definition;
+                GroupName = groupName;
+            }
+
+            public ExternalDefinition Definition { get; }
+            public string GroupName { get; }
+        }
+
         private void RunBindingAttemptDiagnostics(Document doc, IList<ElementId> selectedCategoryIds)
         {
             var selectedCategories = selectedCategoryIds?.Select(id => Category.GetCategory(doc, id)).Where(c => c != null).ToList();
             try
             {
-                using (var tx = new Transaction(doc, "DfE IFC Namer - Diagnostics Binding Attempt"))
+                _diagnostics.AddInfo("BindingAttempt", "Starting diagnostic binding transaction.");
+                ExecuteDiagnosticBindingTransaction(doc, "DfE IFC Namer - Diagnostics Binding Attempt", () =>
                 {
-                    tx.Start();
                     var bindingSummary = _parameterService.EnsureIfcNameParameters(doc, selectedCategories);
                     foreach (var result in bindingSummary.ParameterResults)
                     {
                         _diagnostics.AddInfo("BindingAttempt", "Binding attempt result.", new
                         {
-                            result.Name,
+                            RequestedName = result.Name,
+                            Resolved = result.FoundInSharedParameterFile,
                             BindingType = result.ExpectedBindingType,
                             CategoryCount = bindingSummary.IncludedCategoriesCount,
                             ParameterGroup = result.ExpectedBindingType == "project info" ? GroupTypeId.Data.TypeId : GroupTypeId.Ifc.TypeId,
+                            InsertAttempted = true,
                             result.InsertSucceeded,
                             result.ReInsertSucceeded,
                             ExistingBindingWasPresent = !result.InsertSucceeded,
@@ -524,10 +712,10 @@ namespace DfEIfcNamer.Services
                             result.Notes
                         });
                     }
-
-                    tx.RollBack();
-                    _diagnostics.AddDebug("BindingAttempt", "Diagnostic binding transaction rolled back.");
-                }
+                },
+                committed: () => _diagnostics.AddDebug("BindingAttempt", "Diagnostic binding transaction committed."),
+                rolledBack: () => _diagnostics.AddDebug("BindingAttempt", "Diagnostic binding transaction rolled back."),
+                rollbackAtEnd: true);
             }
             catch (Exception ex)
             {
@@ -725,6 +913,16 @@ namespace DfEIfcNamer.Services
             }
         }
 
+        private static string AppendNote(string existing, string note)
+        {
+            if (string.IsNullOrWhiteSpace(existing))
+            {
+                return note;
+            }
+
+            return existing + " " + note;
+        }
+
         private IList<IfcEntityDefinition> SafeLoadEntityLibrary(out string error)
         {
             try
@@ -879,7 +1077,48 @@ namespace DfEIfcNamer.Services
             return valid;
         }
 
-        private static IList<ParameterBindingResult> BuildVerificationResults(Document doc, IList<Category> modelCategories)
+        private Dictionary<string, SharedDefinitionMatch> ResolveExpectedDefinitionsInSharedFile(Document doc)
+        {
+            var resolved = new Dictionary<string, SharedDefinitionMatch>(StringComparer.OrdinalIgnoreCase);
+            var file = TryOpenSharedParameterFileWithDiagnostics(doc, "SetupSharedDefinitionLookup");
+            if (file == null)
+            {
+                return resolved;
+            }
+
+            var groups = file.Groups.Cast<DefinitionGroup>().ToList();
+            var lookup = BuildSharedParameterLookup(groups);
+            _diagnostics.AddInfo("SetupSharedDefinitionLookup", "Setup lookup groups.", new
+            {
+                GroupCount = groups.Count,
+                Groups = groups.Select(g => new { Group = g.Name, DefinitionCount = g.Definitions.Size }).ToList()
+            });
+
+            foreach (var expected in ExpectedParameters)
+            {
+                var match = ResolveDefinitionAcrossGroups(lookup, expected.LookupNames, null);
+                if (match != null)
+                {
+                    resolved[expected.DisplayName] = match;
+                }
+
+                _diagnostics.AddInfo("SetupSharedDefinitionLookup", "Setup shared definition lookup result.", new
+                {
+                    Parameter = expected.DisplayName,
+                    Candidates = expected.LookupNames,
+                    MatchFound = match != null,
+                    ResolvedName = match?.Definition?.Name,
+                    MatchedGroup = match?.GroupName
+                });
+            }
+
+            return resolved;
+        }
+
+        private static IList<ParameterBindingResult> BuildVerificationResults(
+            Document doc,
+            IList<Category> modelCategories,
+            IReadOnlyDictionary<string, SharedDefinitionMatch> sharedDefinitionMatches)
         {
             var results = new List<ParameterBindingResult>();
             var bindingMap = GetBindingMap(doc);
@@ -891,14 +1130,23 @@ namespace DfEIfcNamer.Services
                 {
                     Name = expected.DisplayName,
                     ExpectedBindingType = expected.ExpectedBindingType,
-                    FoundInSharedParameterFile = true,
+                    FoundInSharedParameterFile = sharedDefinitionMatches.ContainsKey(expected.DisplayName),
                     BindingAction = "Verify"
                 };
+
+                if (sharedDefinitionMatches.TryGetValue(expected.DisplayName, out var resolved))
+                {
+                    result.Notes = $"ResolvedName='{resolved.Definition.Name}', ResolvedGroup='{resolved.GroupName}'.";
+                }
+                else
+                {
+                    result.Notes = "Parameter not found in any shared parameter group.";
+                }
 
                 if (!TryResolveBinding(bindingMap, expected.LookupNames, out var definitionName, out var binding))
                 {
                     result.FinalBoundState = false;
-                    result.Notes = "Definition not bound in document.";
+                    result.Notes = AppendNote(result.Notes, "Definition not bound in document.");
                     results.Add(result);
                     continue;
                 }
@@ -914,11 +1162,11 @@ namespace DfEIfcNamer.Services
                 result.FinalBoundState = kindOk && categoriesOk;
                 if (!kindOk)
                 {
-                    result.Notes = $"Binding kind mismatch for definition '{definitionName}'.";
+                    result.Notes = AppendNote(result.Notes, $"Binding kind mismatch for definition '{definitionName}'.");
                 }
                 else if (!categoriesOk)
                 {
-                    result.Notes = "Binding categories do not match expected scope.";
+                    result.Notes = AppendNote(result.Notes, "Binding categories do not match expected scope.");
                 }
 
                 results.Add(result);
