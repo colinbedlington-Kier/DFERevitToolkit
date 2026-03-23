@@ -15,7 +15,7 @@ namespace DfEIfcNamer.Services
 
         private static readonly ParameterSpec[] InstanceParameters =
         {
-            ParameterSpec.Instance("IfcName", "IfcName", "IFCName"),
+            ParameterSpec.Instance("IFCName", "IFCName", "IfcName"),
             ParameterSpec.Instance("IfcDescription", "IfcDescription"),
             ParameterSpec.Instance("DfE_IFCPredefinedType", "DfE_IFCPredefinedType"),
             ParameterSpec.Instance("DfE_UserDefinedPredefinedTypeValue", "DfE_UserDefinedPredefinedTypeValue"),
@@ -24,7 +24,7 @@ namespace DfEIfcNamer.Services
 
         private static readonly ParameterSpec[] TypeParameters =
         {
-            ParameterSpec.Type("IfcName[Type]", "IfcName[Type]", "IFCName[Type]", "IFCName [Type]"),
+            ParameterSpec.Type("IFCName [Type]", "IFCName [Type]", "IFCName[Type]", "IfcName[Type]"),
             ParameterSpec.Type("IfcDescription[Type]", "IfcDescription[Type]"),
             ParameterSpec.Type("Classification", "Classification"),
             ParameterSpec.Type("Classification(2)", "Classification(2)"),
@@ -68,14 +68,25 @@ namespace DfEIfcNamer.Services
                 var sharedPath = ResolveSharedParameterFilePath();
                 summary.SharedParameterFilePath = sharedPath;
 
-                if (!EnsureSharedParameterFileConfigured(doc.Application, sharedPath))
+                if (!EnsureSharedParameterFileConfigured(doc.Application, sharedPath, out var validationError))
                 {
-                    summary.ErrorMessage = "Shared parameter file missing at: " + sharedPath;
+                    summary.ErrorMessage = validationError;
                     InitializeUnresolvedResults(summary);
                     return summary;
                 }
 
-                var file = doc.Application.OpenSharedParameterFile();
+                DefinitionFile file;
+                try
+                {
+                    file = doc.Application.OpenSharedParameterFile();
+                }
+                catch (Exception ex)
+                {
+                    summary.ErrorMessage = $"OpenSharedParameterFile failed for '{sharedPath}': {ex}";
+                    InitializeUnresolvedResults(summary);
+                    return summary;
+                }
+
                 if (file == null)
                 {
                     summary.ErrorMessage = "OpenSharedParameterFile() returned null. Expected: " + sharedPath;
@@ -86,7 +97,8 @@ namespace DfEIfcNamer.Services
                 var group = file.Groups.get_Item(SharedParameterGroupName);
                 if (group == null)
                 {
-                    summary.ErrorMessage = "Shared parameter group not found: " + SharedParameterGroupName;
+                    var groupNames = string.Join(", ", file.Groups.Cast<DefinitionGroup>().Select(g => g.Name));
+                    summary.ErrorMessage = "Shared parameter group not found: " + SharedParameterGroupName + ". Available groups: " + groupNames;
                     InitializeUnresolvedResults(summary);
                     return summary;
                 }
@@ -402,13 +414,35 @@ namespace DfEIfcNamer.Services
             return false;
         }
 
-        private static bool EnsureSharedParameterFileConfigured(Autodesk.Revit.ApplicationServices.Application app, string sharedPath)
+        private static bool EnsureSharedParameterFileConfigured(
+            Autodesk.Revit.ApplicationServices.Application app,
+            string sharedPath,
+            out string error)
         {
             if (!File.Exists(sharedPath))
             {
+                error = "Shared parameter file missing at: " + sharedPath;
                 return false;
             }
 
+            try
+            {
+                using (var stream = File.Open(sharedPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    if (stream.Length == 0)
+                    {
+                        error = "Shared parameter file is empty: " + sharedPath;
+                        return false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = $"Shared parameter file is not readable at '{sharedPath}': {ex.Message}";
+                return false;
+            }
+
+            error = null;
             app.SharedParametersFilename = sharedPath;
             return true;
         }

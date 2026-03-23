@@ -37,6 +37,10 @@ namespace DfEIfcNamer.Models
         public int ReInsertSucceededCount { get; set; }
         public int VerifiedBoundCount { get; set; }
         public int VerificationFailedCount { get; set; }
+        public int IfcClassesLoadedCount { get; set; }
+        public int IfcPredefinedTypesLoadedCount { get; set; }
+        public int InvalidIfcMetadataCount { get; set; }
+        public IList<string> InvalidIfcMetadataNotes { get; set; } = new List<string>();
         public IList<string> IncludedCategoryNames { get; set; } = new List<string>();
         public IList<ParameterBindingResult> ParameterResults { get; set; } = new List<ParameterBindingResult>();
         public string Message { get; set; }

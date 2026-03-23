@@ -42,7 +42,7 @@ namespace DfEIfcNamer.UI
         private void CheckSharedParameterFile_Click(object sender, RoutedEventArgs e) => RunDiagnosticsRequest(RevitRequestId.CheckSharedParameterFile);
         private void CheckExpectedDefinitions_Click(object sender, RoutedEventArgs e) => RunDiagnosticsRequest(RevitRequestId.CheckExpectedDefinitions);
         private void CheckCategoryBindings_Click(object sender, RoutedEventArgs e) => RunDiagnosticsRequest(RevitRequestId.CheckCategoryBindings);
-        private void TestSingleParameterBind_Click(object sender, RoutedEventArgs e) => RunDiagnosticsRequest(RevitRequestId.TestSingleParameterBind, "IfcName");
+        private void TestSingleParameterBind_Click(object sender, RoutedEventArgs e) => RunDiagnosticsRequest(RevitRequestId.TestSingleParameterBind, "IFCName");
         private void ClearLog_Click(object sender, RoutedEventArgs e) => RunDiagnosticsRequest(RevitRequestId.ClearDiagnostics);
 
         private void CopyLog_Click(object sender, RoutedEventArgs e)
@@ -63,6 +63,9 @@ namespace DfEIfcNamer.UI
                     "Total insert successes: " + (summary?.TotalInsertSuccesses ?? 0) + "\n" +
                     "Total reinsert successes: " + (summary?.TotalReInsertSuccesses ?? 0) + "\n" +
                     "Total verified: " + (summary?.TotalVerified ?? 0) + "\n" +
+                    "IFC classes loaded: " + (summary?.IfcClassesLoaded ?? 0) + "\n" +
+                    "IFC predefined types loaded: " + (summary?.IfcPredefinedTypesLoaded ?? 0) + "\n" +
+                    "Invalid IFC metadata count: " + (summary?.InvalidIfcMetadataCount ?? 0) + "\n" +
                     "========================================\n\n";
                 Clipboard.SetText(header + (state?.PlainTextLog ?? string.Empty));
             });
@@ -79,7 +82,26 @@ namespace DfEIfcNamer.UI
                 };
                 if (dialog.ShowDialog() == true)
                 {
-                    File.WriteAllText(dialog.FileName, state?.PlainTextLog ?? string.Empty);
+                    var summary = state?.Summary;
+                    var payload =
+                        "=== DfE IFC Namer Diagnostics Summary ===\n" +
+                        "Document title: " + (summary?.DocumentTitle ?? "n/a") + "\n" +
+                        "Revit version: " + (summary?.RevitVersion ?? "n/a") + "\n" +
+                        "Active project name: " + (summary?.ActiveProjectName ?? "n/a") + "\n" +
+                        "Shared parameter path: " + (summary?.SharedParameterPath ?? "n/a") + "\n" +
+                        "Total groups: " + (summary?.GroupCount ?? 0) + "\n" +
+                        "Total definitions: " + (summary?.DefinitionCount ?? 0) + "\n" +
+                        "Total expected parameters: " + (summary?.TotalExpectedParameters ?? 0) + "\n" +
+                        "Total parameters found: " + (summary?.TotalParametersFound ?? 0) + "\n" +
+                        "Total insert successes: " + (summary?.TotalInsertSuccesses ?? 0) + "\n" +
+                        "Total reinsert successes: " + (summary?.TotalReInsertSuccesses ?? 0) + "\n" +
+                        "Total verified: " + (summary?.TotalVerified ?? 0) + "\n" +
+                        "IFC classes loaded: " + (summary?.IfcClassesLoaded ?? 0) + "\n" +
+                        "IFC predefined types loaded: " + (summary?.IfcPredefinedTypesLoaded ?? 0) + "\n" +
+                        "Invalid IFC metadata count: " + (summary?.InvalidIfcMetadataCount ?? 0) + "\n" +
+                        "========================================\n\n" +
+                        (state?.PlainTextLog ?? string.Empty);
+                    File.WriteAllText(dialog.FileName, payload);
                 }
             });
         }

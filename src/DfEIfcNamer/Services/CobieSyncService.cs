@@ -12,12 +12,12 @@ namespace DfEIfcNamer.Services
     {
         private static readonly ParameterExpectation[] ExpectedParameters =
         {
-            new ParameterExpectation("IfcName", "instance", false, "IfcName", "IFCName"),
+            new ParameterExpectation("IFCName", "instance", false, "IFCName", "IfcName"),
             new ParameterExpectation("IfcDescription", "instance", false, "IfcDescription"),
             new ParameterExpectation("DfE_IFCPredefinedType", "instance", false, "DfE_IFCPredefinedType"),
             new ParameterExpectation("DfE_UserDefinedPredefinedTypeValue", "instance", false, "DfE_UserDefinedPredefinedTypeValue"),
             new ParameterExpectation("DfE_IFCEntity", "instance", false, "DfE_IFCEntity"),
-            new ParameterExpectation("IfcName[Type]", "type", false, "IfcName[Type]", "IFCName[Type]", "IFCName [Type]"),
+            new ParameterExpectation("IFCName [Type]", "type", false, "IFCName [Type]", "IFCName[Type]", "IfcName[Type]"),
             new ParameterExpectation("IfcDescription[Type]", "type", false, "IfcDescription[Type]"),
             new ParameterExpectation("Classification", "type", false, "Classification"),
             new ParameterExpectation("Classification(2)", "type", false, "Classification(2)"),
@@ -64,8 +64,11 @@ namespace DfEIfcNamer.Services
                 status.SharedParameterFileFound = System.IO.File.Exists(status.SharedParameterFilePath);
                 status.EntityMappingFileExists = System.IO.File.Exists(status.EntityMappingJsonPath);
                 status.ClassificationSlotsFileExists = System.IO.File.Exists(status.ClassificationSlotsJsonPath);
-                status.EntityMappingLoaded = TryLoad(() => _resourceJsonService.LoadEntityLibrary(), out var entityError);
+                var entityLibrary = SafeLoadEntityLibrary(out var entityError);
+                status.EntityMappingLoaded = string.IsNullOrWhiteSpace(entityError) && entityLibrary != null;
                 status.ClassificationSlotsLoaded = TryLoad(() => _resourceJsonService.LoadClassificationSlots(), out var classificationError);
+                status.IfcClassesLoadedCount = entityLibrary?.Count ?? 0;
+                status.IfcPredefinedTypesLoadedCount = entityLibrary?.Sum(x => x.PredefinedTypes?.Count ?? 0) ?? 0;
 
                 status.InstanceParameterBound = IsParameterBound(doc, new[] { "IFCName", "IfcName" }, false, categories);
                 status.TypeParameterBound = IsParameterBound(doc, new[] { "IFCName [Type]", "IFCName[Type]", "IfcName[Type]" }, true, categories);
@@ -73,6 +76,16 @@ namespace DfEIfcNamer.Services
                 status.ParametersRequestedCount = status.ParameterResults.Count;
                 status.VerifiedBoundCount = status.ParameterResults.Count(x => x.FinalBoundState);
                 status.VerificationFailedCount = status.ParameterResults.Count(x => !x.FinalBoundState);
+                status.InvalidIfcMetadataNotes = ValidateIfcMetadataAgainstLibrary(doc, entityLibrary);
+                status.InvalidIfcMetadataCount = status.InvalidIfcMetadataNotes.Count;
+                if (status.InvalidIfcMetadataCount > 0)
+                {
+                    _diagnostics.AddWarning("IfcValidation", "Invalid IFC entity/predefined type combinations were found.", new
+                    {
+                        status.InvalidIfcMetadataCount,
+                        Notes = status.InvalidIfcMetadataNotes.Take(40).ToList()
+                    });
+                }
 
                 var errors = new List<string>();
                 if (!status.SharedParameterFileFound)
@@ -88,6 +101,10 @@ namespace DfEIfcNamer.Services
                 if (!status.ClassificationSlotsLoaded && !string.IsNullOrWhiteSpace(classificationError))
                 {
                     errors.Add(classificationError);
+                }
+                if (status.InvalidIfcMetadataCount > 0)
+                {
+                    errors.Add("Invalid IFC entity/predefined combinations: " + status.InvalidIfcMetadataCount);
                 }
 
                 status.ErrorDetails = string.Join(" | ", errors);
@@ -173,7 +190,7 @@ namespace DfEIfcNamer.Services
             RunExpectedDefinitionDiagnostics(doc);
             RunCategoryBindingDiagnostics(doc, selectedCategoryIds);
             RunBindingAttemptDiagnostics(doc, selectedCategoryIds);
-            RunSingleParameterBindDiagnostic(doc, selectedCategoryIds, "IfcName");
+            RunSingleParameterBindDiagnostic(doc, selectedCategoryIds, "IFCName");
             var setup = CheckSetup(doc, selectedCategoryIds);
             UpdateDiagnosticsSummaryFromSetup(doc, setup);
             _diagnostics.AddInfo("FullDiagnostics", "Completed full diagnostics run.");
@@ -215,16 +232,9 @@ namespace DfEIfcNamer.Services
                 Groups = inspect.Groups.Select(g => g.Name).ToList()
             });
 
-            var before = doc.Application.SharedParametersFilename;
-            doc.Application.SharedParametersFilename = sharedPath;
-            var after = doc.Application.SharedParametersFilename;
-            _diagnostics.AddInfo("SharedParameterFile", "Set Application.SharedParametersFilename.", new { Before = before, After = after });
-            var file = doc.Application.OpenSharedParameterFile();
-            _diagnostics.Summary.OpenSharedParameterFileSucceeded = file != null;
-
+            var file = TryOpenSharedParameterFileWithDiagnostics(doc, "SharedParameterFile");
             if (file == null)
             {
-                _diagnostics.AddError("SharedParameterFile", "OpenSharedParameterFile returned null.");
                 return;
             }
 
@@ -259,12 +269,9 @@ namespace DfEIfcNamer.Services
 
         public void RunExpectedDefinitionDiagnostics(Document doc)
         {
-            var sharedPath = _parameterService.ResolveSharedParameterFilePath();
-            doc.Application.SharedParametersFilename = sharedPath;
-            var file = doc.Application.OpenSharedParameterFile();
+            var file = TryOpenSharedParameterFileWithDiagnostics(doc, "ExpectedDefinitions");
             if (file == null)
             {
-                _diagnostics.AddError("ExpectedDefinitions", "OpenSharedParameterFile returned null before definition lookup.");
                 return;
             }
 
@@ -297,6 +304,18 @@ namespace DfEIfcNamer.Services
                     _diagnostics.Summary.LastSuccessfulParameterFound = expected.DisplayName;
                 }
 
+                var resolvedName = exact?.Definition?.Name;
+                var fallbackUsed = !string.IsNullOrWhiteSpace(resolvedName) &&
+                                   !string.Equals(resolvedName, expected.DisplayName, StringComparison.Ordinal);
+                if (fallbackUsed)
+                {
+                    _diagnostics.AddWarning("ExpectedDefinitions", "Legacy compatibility alias used.", new
+                    {
+                        Requested = expected.DisplayName,
+                        Resolved = resolvedName
+                    });
+                }
+
                 _diagnostics.AddInfo("ExpectedDefinitions", "Expected parameter lookup.", new
                 {
                     Parameter = expected.DisplayName,
@@ -307,6 +326,8 @@ namespace DfEIfcNamer.Services
                                                       expected.LookupNames.Any(n => byGroup["DfE IFC Namer"].Any(d => string.Equals(d.Name, n, StringComparison.Ordinal))),
                     DefinitionExistsAnyGroup = inAnyGroup,
                     FoundGroup = exact?.Group,
+                    ResolvedName = resolvedName,
+                    LegacyFallbackUsed = fallbackUsed,
                     NearMatchesCaseInsensitive = ciMatches,
                     NearMatchesTrimmed = trimmedMatches
                 });
@@ -366,11 +387,9 @@ namespace DfEIfcNamer.Services
             try
             {
                 var sharedPath = _parameterService.ResolveSharedParameterFilePath();
-                doc.Application.SharedParametersFilename = sharedPath;
-                var file = doc.Application.OpenSharedParameterFile();
+                var file = TryOpenSharedParameterFileWithDiagnostics(doc, "SingleParameterBind");
                 if (file == null)
                 {
-                    _diagnostics.AddError("SingleParameterBind", "OpenSharedParameterFile returned null.");
                     return;
                 }
 
@@ -431,6 +450,53 @@ namespace DfEIfcNamer.Services
             {
                 _diagnostics.Summary.LastFailedBinding = spec.DisplayName;
                 _diagnostics.AddError("SingleParameterBind", "Single parameter bind test failed.", ex);
+            }
+        }
+
+        private DefinitionFile TryOpenSharedParameterFileWithDiagnostics(Document doc, string stage)
+        {
+            var sharedPath = _parameterService.ResolveSharedParameterFilePath();
+            var inspection = _fileInspector.Inspect(sharedPath, 10);
+            _diagnostics.AddInfo(stage, "Shared parameter preflight before OpenSharedParameterFile.", new
+            {
+                Path = sharedPath,
+                inspection.FileExists,
+                inspection.IsReadable,
+                inspection.FileLength,
+                inspection.LastWriteTimeUtc,
+                PreviewLines = inspection.PreviewLines
+            });
+
+            _diagnostics.Summary.SharedParameterPath = sharedPath;
+            _diagnostics.Summary.SharedParameterFileExists = inspection.FileExists;
+
+            if (!inspection.FileExists || !inspection.IsReadable)
+            {
+                _diagnostics.Summary.OpenSharedParameterFileSucceeded = false;
+                _diagnostics.AddError(stage, "Shared parameter file preflight failed.", null, new { inspection.ReadError });
+                return null;
+            }
+
+            var before = doc.Application.SharedParametersFilename;
+            doc.Application.SharedParametersFilename = sharedPath;
+            var after = doc.Application.SharedParametersFilename;
+            _diagnostics.AddInfo(stage, "Set Application.SharedParametersFilename.", new { Before = before, After = after });
+            try
+            {
+                var file = doc.Application.OpenSharedParameterFile();
+                _diagnostics.Summary.OpenSharedParameterFileSucceeded = file != null;
+                if (file == null)
+                {
+                    _diagnostics.AddError(stage, "OpenSharedParameterFile returned null.");
+                }
+
+                return file;
+            }
+            catch (Exception ex)
+            {
+                _diagnostics.Summary.OpenSharedParameterFileSucceeded = false;
+                _diagnostics.AddError(stage, "OpenSharedParameterFile threw an exception.", ex);
+                return null;
             }
         }
 
@@ -618,6 +684,9 @@ namespace DfEIfcNamer.Services
             _diagnostics.Summary.TotalInsertSuccesses = status?.InsertSucceededCount ?? 0;
             _diagnostics.Summary.TotalReInsertSuccesses = status?.ReInsertSucceededCount ?? 0;
             _diagnostics.Summary.TotalVerified = status?.VerifiedBoundCount ?? 0;
+            _diagnostics.Summary.IfcClassesLoaded = status?.IfcClassesLoadedCount ?? 0;
+            _diagnostics.Summary.IfcPredefinedTypesLoaded = status?.IfcPredefinedTypesLoadedCount ?? 0;
+            _diagnostics.Summary.InvalidIfcMetadataCount = status?.InvalidIfcMetadataCount ?? 0;
             _diagnostics.Summary.LastSuccessfulBinding = status?.ParameterResults?.FirstOrDefault(r => r.InsertSucceeded || r.ReInsertSucceeded)?.Name;
             _diagnostics.Summary.LastFailedBinding = status?.ParameterResults?.FirstOrDefault(r => !r.FinalBoundState)?.Name;
             _diagnostics.Summary.LastSuccessfulParameterFound = status?.ParameterResults?.FirstOrDefault(r => r.FoundInSharedParameterFile)?.Name;
@@ -654,6 +723,126 @@ namespace DfEIfcNamer.Services
                 error = ex.Message;
                 return false;
             }
+        }
+
+        private IList<IfcEntityDefinition> SafeLoadEntityLibrary(out string error)
+        {
+            try
+            {
+                var loaded = _resourceJsonService.LoadEntityLibrary() ?? new List<IfcEntityDefinition>();
+                error = null;
+                _diagnostics.AddInfo("IfcMatrix", "Loaded IFC entity mapping JSON.", new
+                {
+                    ClassCount = loaded.Count,
+                    PredefinedTypeCount = loaded.Sum(x => x.PredefinedTypes?.Count ?? 0),
+                    Path = _resourceJsonService.ResolveEntityMappingPath(),
+                    Matrix = loaded.Select(x => new
+                    {
+                        x.DisplayName,
+                        x.IFCClassToken,
+                        x.ExportAs,
+                        x.ExportType,
+                        x.NameFormat,
+                        PredefinedTypes = x.PredefinedTypes ?? new List<string>()
+                    }).ToList()
+                });
+                return loaded;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                _diagnostics.AddError("IfcMatrix", "Failed to load IFC entity mapping JSON.", ex, new
+                {
+                    Path = _resourceJsonService.ResolveEntityMappingPath()
+                });
+                return new List<IfcEntityDefinition>();
+            }
+        }
+
+        private static IList<string> ValidateIfcMetadataAgainstLibrary(Document doc, IList<IfcEntityDefinition> library)
+        {
+            var notes = new List<string>();
+            if (library == null || library.Count == 0)
+            {
+                notes.Add("IFC entity mapping JSON is empty; cannot validate IFC metadata values.");
+                return notes;
+            }
+
+            var entityRules = library
+                .Where(x => !string.IsNullOrWhiteSpace(x.IFCClassToken))
+                .ToDictionary(
+                    x => x.IFCClassToken,
+                    x => new HashSet<string>((x.PredefinedTypes ?? new List<string>()).Where(p => !string.IsNullOrWhiteSpace(p)), StringComparer.OrdinalIgnoreCase),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var elements = new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Take(1000)
+                .ToList();
+
+            foreach (var element in elements)
+            {
+                var entity = LookupFirst(element, "DfE_IFCEntity")?.AsString();
+                var predefined = LookupFirst(element, "DfE_IFCPredefinedType")?.AsString();
+                var userDefined = LookupFirst(element, "DfE_UserDefinedPredefinedTypeValue")?.AsString();
+
+                if (string.IsNullOrWhiteSpace(entity) && string.IsNullOrWhiteSpace(predefined) && string.IsNullOrWhiteSpace(userDefined))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(entity))
+                {
+                    notes.Add($"{element.Id}: DfE_IFCEntity is empty while IFC metadata exists.");
+                    continue;
+                }
+
+                if (!entityRules.TryGetValue(entity.Trim(), out var allowed))
+                {
+                    notes.Add($"{element.Id}: DfE_IFCEntity '{entity}' is not in JSON-supported IFC classes.");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(predefined))
+                {
+                    notes.Add($"{element.Id}: DfE_IFCPredefinedType is empty for entity '{entity}'.");
+                    continue;
+                }
+
+                if (!allowed.Contains(predefined.Trim()))
+                {
+                    notes.Add($"{element.Id}: DfE_IFCPredefinedType '{predefined}' is invalid for entity '{entity}'.");
+                    continue;
+                }
+
+                if (string.Equals(predefined.Trim(), "USERDEFINED", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.IsNullOrWhiteSpace(userDefined))
+                    {
+                        notes.Add($"{element.Id}: USERDEFINED selected but DfE_UserDefinedPredefinedTypeValue is blank.");
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(userDefined))
+                {
+                    notes.Add($"{element.Id}: DfE_UserDefinedPredefinedTypeValue should be blank when predefined type is '{predefined}'.");
+                }
+            }
+
+            return notes;
+        }
+
+        private static Parameter LookupFirst(Element element, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                var parameter = element.LookupParameter(name);
+                if (parameter != null)
+                {
+                    return parameter;
+                }
+            }
+
+            return null;
         }
 
         private static IList<Category> GetModelCategories(Document doc, IList<ElementId> selected, out int skippedUnsupported)

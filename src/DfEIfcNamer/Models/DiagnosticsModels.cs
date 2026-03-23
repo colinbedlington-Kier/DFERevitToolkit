@@ -39,6 +39,9 @@ namespace DfEIfcNamer.Models
         public int TotalInsertSuccesses { get; set; }
         public int TotalReInsertSuccesses { get; set; }
         public int TotalVerified { get; set; }
+        public int IfcClassesLoaded { get; set; }
+        public int IfcPredefinedTypesLoaded { get; set; }
+        public int InvalidIfcMetadataCount { get; set; }
         public string LastErrorSummary { get; set; }
         public string LastSuccessfulParameterFound { get; set; }
         public string LastSuccessfulBinding { get; set; }
