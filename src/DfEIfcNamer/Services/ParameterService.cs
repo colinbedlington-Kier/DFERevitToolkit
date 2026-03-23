@@ -10,7 +10,6 @@ namespace DfEIfcNamer.Services
 {
     public class ParameterService
     {
-        private const string SharedParameterGroupName = "DfE IFC Namer";
         private const string SharedParameterFileName = "DfE_IfcNamer_SharedParameters.txt";
 
         private static readonly ParameterSpec[] InstanceParameters =
@@ -94,14 +93,14 @@ namespace DfEIfcNamer.Services
                     return summary;
                 }
 
-                var group = file.Groups.get_Item(SharedParameterGroupName);
-                if (group == null)
+                var groups = file.Groups.Cast<DefinitionGroup>().ToList();
+                if (groups.Count == 0)
                 {
-                    var groupNames = string.Join(", ", file.Groups.Cast<DefinitionGroup>().Select(g => g.Name));
-                    summary.ErrorMessage = "Shared parameter group not found: " + SharedParameterGroupName + ". Available groups: " + groupNames;
+                    summary.ErrorMessage = "Parameter not found in any shared parameter group";
                     InitializeUnresolvedResults(summary);
                     return summary;
                 }
+                var definitionLookup = BuildDefinitionLookup(groups, summary);
 
                 var selectedIds = categories == null
                     ? null
@@ -122,9 +121,9 @@ namespace DfEIfcNamer.Services
                 using (var tg = new TransactionGroup(doc, "DfE IFC Bootstrap Parameters"))
                 {
                     tg.Start();
-                    BindParameterSet(doc, group, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary);
-                    BindParameterSet(doc, group, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary);
-                    BindParameterSet(doc, group, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary);
+                    BindParameterSet(doc, definitionLookup, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary);
+                    BindParameterSet(doc, definitionLookup, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary);
+                    BindParameterSet(doc, definitionLookup, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary);
                     tg.Assimilate();
                 }
 
@@ -156,7 +155,7 @@ namespace DfEIfcNamer.Services
                     ReInsertSucceeded = false,
                     FinalBoundState = false,
                     BindingAction = "None",
-                    Notes = "Shared parameter file/group unavailable."
+                    Notes = "Shared parameter file unavailable."
                 });
             }
 
@@ -213,7 +212,7 @@ namespace DfEIfcNamer.Services
 
         private static void BindParameterSet(
             Document doc,
-            DefinitionGroup group,
+            IReadOnlyDictionary<string, DefinitionEntry> definitionLookup,
             IEnumerable<ParameterSpec> specs,
             CategorySet categorySet,
             ForgeTypeId groupTypeId,
@@ -230,12 +229,12 @@ namespace DfEIfcNamer.Services
 
                 try
                 {
-                    var definition = ResolveDefinition(group, spec, out var resolvedName);
+                    var definition = ResolveDefinition(definitionLookup, spec, out var resolvedName, out var resolvedGroup);
                     result.FoundInSharedParameterFile = definition != null;
 
                     if (definition == null)
                     {
-                        result.Notes = "Missing definition in shared parameter file: " + spec.DisplayName;
+                        result.Notes = "Parameter not found in any shared parameter group: " + spec.DisplayName;
                         summary.ParameterResults.Add(result);
                         continue;
                     }
@@ -259,6 +258,8 @@ namespace DfEIfcNamer.Services
                     {
                         result.Notes = $"Resolved shared parameter definition '{resolvedName}' for requested '{spec.DisplayName}'.";
                     }
+
+                    result.Notes = AppendNote(result.Notes, $"Definition located in shared parameter group '{resolvedGroup}'.");
                 }
                 catch (Exception ex)
                 {
@@ -271,19 +272,60 @@ namespace DfEIfcNamer.Services
             }
         }
 
-        private static ExternalDefinition ResolveDefinition(DefinitionGroup group, ParameterSpec spec, out string resolvedName)
+        private static Dictionary<string, DefinitionEntry> BuildDefinitionLookup(
+            IEnumerable<DefinitionGroup> groups,
+            ParameterBindingSummary summary)
         {
+            var lookup = new Dictionary<string, DefinitionEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var group in groups)
+            {
+                var definitions = group.Definitions.Cast<Definition>().ToList();
+                summary.SharedParameterGroupNames.Add(group.Name);
+                summary.SharedParameterDefinitionCountsByGroup[group.Name] = definitions.Count;
+                foreach (var definition in definitions.OfType<ExternalDefinition>())
+                {
+                    if (!lookup.ContainsKey(definition.Name))
+                    {
+                        lookup[definition.Name] = new DefinitionEntry(definition, group.Name);
+                    }
+
+                    var guidKey = definition.GUID.ToString("D");
+                    if (!lookup.ContainsKey(guidKey))
+                    {
+                        lookup[guidKey] = new DefinitionEntry(definition, group.Name);
+                    }
+                }
+            }
+
+            return lookup;
+        }
+
+        private static ExternalDefinition ResolveDefinition(
+            IReadOnlyDictionary<string, DefinitionEntry> definitionLookup,
+            ParameterSpec spec,
+            out string resolvedName,
+            out string resolvedGroup)
+        {
+            if (!string.IsNullOrWhiteSpace(spec.Guid) &&
+                definitionLookup.TryGetValue(spec.Guid, out var guidMatch))
+            {
+                resolvedName = guidMatch.Definition.Name;
+                resolvedGroup = guidMatch.GroupName;
+                return guidMatch.Definition;
+            }
+
             foreach (var candidate in spec.LookupNames)
             {
-                var definition = group.Definitions.get_Item(candidate) as ExternalDefinition;
-                if (definition != null)
+                if (definitionLookup.TryGetValue(candidate, out var nameMatch))
                 {
-                    resolvedName = candidate;
-                    return definition;
+                    resolvedName = nameMatch.Definition.Name;
+                    resolvedGroup = nameMatch.GroupName;
+                    return nameMatch.Definition;
                 }
             }
 
             resolvedName = null;
+            resolvedGroup = null;
             return null;
         }
 
@@ -509,30 +551,46 @@ namespace DfEIfcNamer.Services
             public int VerificationFailedCount { get; set; }
             public string ErrorMessage { get; set; }
             public IList<string> IncludedCategoryNames { get; } = new List<string>();
+            public IList<string> SharedParameterGroupNames { get; } = new List<string>();
+            public IDictionary<string, int> SharedParameterDefinitionCountsByGroup { get; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             public IList<ParameterBindingResult> ParameterResults { get; } = new List<ParameterBindingResult>();
+        }
+
+        private sealed class DefinitionEntry
+        {
+            public DefinitionEntry(ExternalDefinition definition, string groupName)
+            {
+                Definition = definition;
+                GroupName = groupName;
+            }
+
+            public ExternalDefinition Definition { get; }
+            public string GroupName { get; }
         }
 
         private class ParameterSpec
         {
-            private ParameterSpec(string displayName, string expectedBindingType, params string[] lookupNames)
+            private ParameterSpec(string displayName, string expectedBindingType, string guid, params string[] lookupNames)
             {
                 DisplayName = displayName;
                 ExpectedBindingType = expectedBindingType;
+                Guid = guid;
                 LookupNames = lookupNames;
             }
 
             public string DisplayName { get; }
             public string ExpectedBindingType { get; }
+            public string Guid { get; }
             public IList<string> LookupNames { get; }
 
             public static ParameterSpec Instance(string displayName, params string[] lookupNames)
-                => new ParameterSpec(displayName, "instance", lookupNames);
+                => new ParameterSpec(displayName, "instance", null, lookupNames);
 
             public static ParameterSpec Type(string displayName, params string[] lookupNames)
-                => new ParameterSpec(displayName, "type", lookupNames);
+                => new ParameterSpec(displayName, "type", null, lookupNames);
 
             public static ParameterSpec ProjectInfo(string displayName, params string[] lookupNames)
-                => new ParameterSpec(displayName, "project info", lookupNames);
+                => new ParameterSpec(displayName, "project info", null, lookupNames);
         }
     }
 }
