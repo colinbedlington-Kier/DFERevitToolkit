@@ -63,59 +63,71 @@ namespace DfEIfcNamer.Services
         public ParameterBindingSummary EnsureIfcNameParameters(Document doc, IList<Category> categories)
         {
             var summary = new ParameterBindingSummary();
-            var sharedPath = ResolveSharedParameterFilePath();
-            summary.SharedParameterFilePath = sharedPath;
-
-            if (!EnsureSharedParameterFileConfigured(doc.Application, sharedPath))
+            try
             {
-                summary.ErrorMessage = "Shared parameter file missing at: " + sharedPath;
-                InitializeUnresolvedResults(summary);
-                return summary;
+                var sharedPath = ResolveSharedParameterFilePath();
+                summary.SharedParameterFilePath = sharedPath;
+
+                if (!EnsureSharedParameterFileConfigured(doc.Application, sharedPath))
+                {
+                    summary.ErrorMessage = "Shared parameter file missing at: " + sharedPath;
+                    InitializeUnresolvedResults(summary);
+                    return summary;
+                }
+
+                var file = doc.Application.OpenSharedParameterFile();
+                if (file == null)
+                {
+                    summary.ErrorMessage = "OpenSharedParameterFile() returned null. Expected: " + sharedPath;
+                    InitializeUnresolvedResults(summary);
+                    return summary;
+                }
+
+                var group = file.Groups.get_Item(SharedParameterGroupName);
+                if (group == null)
+                {
+                    summary.ErrorMessage = "Shared parameter group not found: " + SharedParameterGroupName;
+                    InitializeUnresolvedResults(summary);
+                    return summary;
+                }
+
+                var selectedIds = categories == null
+                    ? null
+                    : new HashSet<long>(categories.Where(c => c != null).Select(c => c.Id.Value));
+
+                var allModelCategories = doc.Settings.Categories.Cast<Category>().ToList();
+                var modelCategories = BuildValidModelCategoryList(allModelCategories, selectedIds, summary);
+
+                var projectInfoCategorySet = doc.Application.Create.NewCategorySet();
+                var projectInfoCategory = doc.Settings.Categories.get_Item(BuiltInCategory.OST_ProjectInformation);
+                if (projectInfoCategory != null)
+                {
+                    projectInfoCategorySet.Insert(projectInfoCategory);
+                }
+
+                var modelCategorySet = BuildCategorySet(doc, modelCategories, summary);
+
+                using (var tg = new TransactionGroup(doc, "DfE IFC Bootstrap Parameters"))
+                {
+                    tg.Start();
+                    BindParameterSet(doc, group, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary);
+                    BindParameterSet(doc, group, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary);
+                    BindParameterSet(doc, group, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary);
+                    tg.Assimilate();
+                }
+
+                VerifyBindings(doc, modelCategories, projectInfoCategory, summary);
+                PopulateSummaryCounts(summary);
+            }
+            catch (Exception ex)
+            {
+                summary.ErrorMessage = NormalizeLegacyErrorMessage(ex.Message);
+                if (summary.ParameterResults.Count == 0)
+                {
+                    InitializeUnresolvedResults(summary);
+                }
             }
 
-            var file = doc.Application.OpenSharedParameterFile();
-            if (file == null)
-            {
-                summary.ErrorMessage = "OpenSharedParameterFile() returned null. Expected: " + sharedPath;
-                InitializeUnresolvedResults(summary);
-                return summary;
-            }
-
-            var group = file.Groups.get_Item(SharedParameterGroupName);
-            if (group == null)
-            {
-                summary.ErrorMessage = "Shared parameter group not found: " + SharedParameterGroupName;
-                InitializeUnresolvedResults(summary);
-                return summary;
-            }
-
-            var selectedIds = categories == null
-                ? null
-                : new HashSet<long>(categories.Where(c => c != null).Select(c => c.Id.Value));
-
-            var allModelCategories = doc.Settings.Categories.Cast<Category>().ToList();
-            var modelCategories = BuildValidModelCategoryList(allModelCategories, selectedIds, summary);
-
-            var projectInfoCategorySet = doc.Application.Create.NewCategorySet();
-            var projectInfoCategory = doc.Settings.Categories.get_Item(BuiltInCategory.OST_ProjectInformation);
-            if (projectInfoCategory != null)
-            {
-                projectInfoCategorySet.Insert(projectInfoCategory);
-            }
-
-            var modelCategorySet = BuildCategorySet(doc, modelCategories, summary);
-
-            using (var tg = new TransactionGroup(doc, "DfE IFC Bootstrap Parameters"))
-            {
-                tg.Start();
-                BindParameterSet(doc, group, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary);
-                BindParameterSet(doc, group, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary);
-                BindParameterSet(doc, group, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary);
-                tg.Assimilate();
-            }
-
-            VerifyBindings(doc, modelCategories, projectInfoCategory, summary);
-            PopulateSummaryCounts(summary);
             return summary;
         }
 
@@ -180,7 +192,7 @@ namespace DfEIfcNamer.Services
                 catch (Exception ex)
                 {
                     summary.SkippedUnsupportedCategoriesCount++;
-                    summary.ErrorMessage = AppendError(summary.ErrorMessage, $"Category insert skipped for '{category.Name}': {ex.Message}");
+                    summary.ErrorMessage = AppendError(summary.ErrorMessage, $"Category insert skipped for '{category.Name}': {NormalizeLegacyErrorMessage(ex.Message)}");
                 }
             }
 
@@ -238,7 +250,7 @@ namespace DfEIfcNamer.Services
                 }
                 catch (Exception ex)
                 {
-                    result.Notes = ex.Message;
+                    result.Notes = NormalizeLegacyErrorMessage(ex.Message);
                     result.BindingAction = "Exception";
                     summary.FailedBindingInsertCount++;
                 }
@@ -419,6 +431,19 @@ namespace DfEIfcNamer.Services
             }
 
             return existing + " " + note;
+        }
+
+        private static string NormalizeLegacyErrorMessage(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return "Shared parameter assignment failed.";
+            }
+
+            var compact = new string(message.Where(char.IsLetterOrDigit).ToArray());
+            return compact.IndexOf("readparamdatabase", StringComparison.OrdinalIgnoreCase) >= 0
+                ? "Shared parameter assignment failed while binding parameters to the model."
+                : message;
         }
 
         private static IEnumerable<ParameterSpec> AllSpecs()
