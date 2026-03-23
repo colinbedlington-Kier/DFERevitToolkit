@@ -19,9 +19,15 @@ namespace DfEIfcNamer.Services
         {
             try
             {
-                var schema = Schema.Lookup(SchemaGuid);
-                var entity = schema == null ? Entity.Empty : doc.ProjectInformation.GetEntity(schema);
-                if (entity.IsValid())
+               var schema = Schema.Lookup(SchemaGuid);
+
+					Entity entity = new Entity();
+					if (schema != null)
+					{
+						entity = doc.ProjectInformation.GetEntity(schema);
+					}
+
+					if (entity.IsValid())
                 {
                     return new MappingSettings
                     {
