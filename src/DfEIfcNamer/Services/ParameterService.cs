@@ -412,5 +412,21 @@ namespace DfEIfcNamer.Services
             public static ParameterSpec Type(string displayName, params string[] lookupNames) => new ParameterSpec(displayName, "type", lookupNames);
             public static ParameterSpec ProjectInfo(string displayName, params string[] lookupNames) => new ParameterSpec(displayName, "project info", lookupNames);
         }
+
+        public class ParameterBindingSummary
+        {
+            public string SharedParameterFilePath { get; set; }
+            public int IncludedCategoriesCount { get; set; }
+            public int SkippedUnsupportedCategoriesCount { get; set; }
+            public int FailedBindingInsertCount { get; set; }
+            public string ErrorMessage { get; set; }
+            public IList<string> IncludedCategoryNames { get; } = new List<string>();
+        }
+
+        private class ValidCategorySelection
+        {
+            public IList<Category> ValidModelCategories { get; } = new List<Category>();
+            public IList<Category> ProjectInfoCategories { get; } = new List<Category>();
+        }
     }
 }
