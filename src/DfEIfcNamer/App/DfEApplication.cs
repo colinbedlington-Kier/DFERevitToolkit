@@ -18,7 +18,8 @@ namespace DfEIfcNamer.App
         public Result OnStartup(UIControlledApplication application)
         {
             var parameterService = new ParameterService();
-            var cobieSyncService = new CobieSyncService(parameterService);
+            var resourceJsonService = new ResourceJsonService();
+            var cobieSyncService = new CobieSyncService(parameterService, resourceJsonService);
             var settingsStore = new ProjectSettingsStore();
 
             var executionHandler = new RevitExecutionHandler(cobieSyncService, settingsStore);

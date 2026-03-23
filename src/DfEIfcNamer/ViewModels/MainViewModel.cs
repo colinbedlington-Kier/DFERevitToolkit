@@ -23,6 +23,7 @@ namespace DfEIfcNamer.ViewModels
             TypeTargetOptions = new ObservableCollection<string>();
             Categories = new ObservableCollection<CategorySelectionItem>();
             Logs = new ObservableCollection<string>();
+            ParameterResults = new ObservableCollection<ParameterBindingResult>();
 
             InstanceSource = "IFCName";
             TypeSource = "IFCName [Type]";
@@ -49,6 +50,7 @@ namespace DfEIfcNamer.ViewModels
         public ObservableCollection<string> TypeTargetOptions { get; }
         public ObservableCollection<CategorySelectionItem> Categories { get; }
         public ObservableCollection<string> Logs { get; }
+        public ObservableCollection<ParameterBindingResult> ParameterResults { get; }
 
         public string InstanceSource { get; set; }
         public string TypeSource { get; set; }
@@ -111,7 +113,7 @@ namespace DfEIfcNamer.ViewModels
                     Categories.Clear();
                     foreach (var category in r.Categories ?? Enumerable.Empty<Category>())
                     {
-                        Categories.Add(new CategorySelectionItem { Id = category.Id.IntegerValue, Name = category.Name, IsSelected = true });
+                        Categories.Add(new CategorySelectionItem { Id = category.Id.Value, Name = category.Name, IsSelected = true });
                     }
                 }
             });
@@ -132,9 +134,10 @@ namespace DfEIfcNamer.ViewModels
                     }
 
                     var status = r.SetupStatus;
-                    SetupStatus = status.SharedParameterFileFound && status.InstanceParameterBound && status.TypeParameterBound ? "✓ Parameters configured" : "⚠ Setup required";
-                    CoverageStatus = $"Missing category bindings: {status.MissingCategoryBindings}";
-                    Logs.Add($"Check: {status.Message}");
+                    SetupStatus = status?.Message ?? "Setup check failed.";
+                    CoverageStatus = BuildCoverageStatus(status);
+                    UpdateParameterResults(status);
+                    Logs.Add($"Check: {status?.Message ?? "No setup status returned."}");
                 }
             });
         }
@@ -153,8 +156,9 @@ namespace DfEIfcNamer.ViewModels
                         return;
                     }
 
-                    SetupStatus = "✓ Parameters assigned";
-                    CoverageStatus = $"Missing category bindings: {r.SetupStatus.MissingCategoryBindings}";
+                    SetupStatus = r.SetupStatus?.Message ?? "Assign parameters completed.";
+                    CoverageStatus = BuildCoverageStatus(r.SetupStatus);
+                    UpdateParameterResults(r.SetupStatus);
                     Logs.Add("Assign Parameters executed.");
                 }
             });
@@ -221,11 +225,49 @@ namespace DfEIfcNamer.ViewModels
                 }
             });
         }
+
+        private static string BuildCoverageStatus(SetupStatus status)
+        {
+            if (status == null)
+            {
+                return "No setup diagnostics available.";
+            }
+
+            var sharedParamsExists = status.SharedParameterFileFound;
+            var entityJsonExists = status.EntityMappingLoaded;
+            var classificationJsonExists = status.ClassificationSlotsLoaded;
+            var addinFolder = status.ResolvedAddinFolder;
+            var sharedParameterPath = status.SharedParameterFilePath;
+            var includedCategories = status.IncludedCategoriesCount;
+            var skippedCategories = status.SkippedUnsupportedCategoriesCount;
+            var bindingFailures = status.FailedBindingInsertCount;
+
+            return
+                $"Shared parameter file loaded: {(sharedParamsExists ? "yes" : "no")}\n" +
+                $"Entity mapping JSON loaded: {(entityJsonExists ? "yes" : "no")}\n" +
+                $"Classification slots JSON loaded: {(classificationJsonExists ? "yes" : "no")}\n" +
+                $"Resolved add-in folder: {addinFolder}\n" +
+                $"Shared parameter path: {sharedParameterPath}\n" +
+                $"Included categories: {includedCategories}\n" +
+                $"Skipped unsupported categories: {skippedCategories}\n" +
+                $"Binding failures: {bindingFailures}";
+        }
+
+        private static string YesNo(bool value) => value ? "yes" : "no";
+
+        private void UpdateParameterResults(SetupStatus status)
+        {
+            ParameterResults.Clear();
+            foreach (var result in status?.ParameterResults ?? Enumerable.Empty<ParameterBindingResult>())
+            {
+                ParameterResults.Add(result);
+            }
+        }
     }
 
     public class CategorySelectionItem : ViewModelBase
     {
-        public int Id { get; set; }
+        public long Id { get; set; }
         public string Name { get; set; }
 
         private bool _isSelected;
