@@ -276,35 +276,40 @@ namespace DfEIfcNamer.Services
             }
 
             var groups = file.Groups.Cast<DefinitionGroup>().ToList();
-            var byGroup = groups.ToDictionary(
-                g => g.Name,
-                g => g.Definitions.Cast<Definition>().ToList(),
-                StringComparer.OrdinalIgnoreCase);
-            var allDefinitionNames = byGroup.SelectMany(k => k.Value.Select(d => d.Name)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var lookup = BuildSharedParameterLookup(groups);
+            _diagnostics.AddInfo("ExpectedDefinitions", "Shared parameter groups available for lookup.", new
+            {
+                GroupCount = groups.Count,
+                Groups = groups.Select(g => new
+                {
+                    Group = g.Name,
+                    DefinitionCount = g.Definitions.Size
+                }).ToList()
+            });
             _diagnostics.Summary.TotalExpectedParameters = ExpectedParameters.Length;
 
             foreach (var expected in ExpectedParameters)
             {
-                var inAnyGroup = allDefinitionNames.Any(n => expected.LookupNames.Any(l => string.Equals(l, n, StringComparison.OrdinalIgnoreCase)));
-                var exact = groups
-                    .Select(g => new
-                    {
-                        Group = g.Name,
-                        Definition = expected.LookupNames
-                            .Select(candidate => g.Definitions.get_Item(candidate) as Definition)
-                            .FirstOrDefault(def => def != null)
-                    })
-                    .FirstOrDefault(x => x.Definition != null);
-                var ciMatches = allDefinitionNames.Where(n => expected.LookupNames.Any(l => string.Equals(l, n, StringComparison.OrdinalIgnoreCase))).ToList();
-                var trimmedMatches = allDefinitionNames.Where(n => expected.LookupNames.Any(l => string.Equals(l?.Trim(), n?.Trim(), StringComparison.OrdinalIgnoreCase))).ToList();
+                var match = ResolveDefinitionAcrossGroups(lookup, expected.LookupNames, null);
+                var inAnyGroup = match != null;
+                var ciMatches = lookup.Values
+                    .Select(v => v.Definition.Name)
+                    .Where(n => expected.LookupNames.Any(l => string.Equals(l, n, StringComparison.OrdinalIgnoreCase)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var trimmedMatches = lookup.Values
+                    .Select(v => v.Definition.Name)
+                    .Where(n => expected.LookupNames.Any(l => string.Equals(l?.Trim(), n?.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
-                if (exact != null)
+                if (match != null)
                 {
                     _diagnostics.Summary.TotalParametersFound++;
                     _diagnostics.Summary.LastSuccessfulParameterFound = expected.DisplayName;
                 }
 
-                var resolvedName = exact?.Definition?.Name;
+                var resolvedName = match?.Definition?.Name;
                 var fallbackUsed = !string.IsNullOrWhiteSpace(resolvedName) &&
                                    !string.Equals(resolvedName, expected.DisplayName, StringComparison.Ordinal);
                 if (fallbackUsed)
@@ -320,12 +325,8 @@ namespace DfEIfcNamer.Services
                 {
                     Parameter = expected.DisplayName,
                     BindingScope = expected.ExpectedBindingType,
-                    ExpectedGroup = "DfE IFC Namer",
-                    GroupExists = byGroup.ContainsKey("DfE IFC Namer"),
-                    DefinitionExistsInExpectedGroup = byGroup.ContainsKey("DfE IFC Namer") &&
-                                                      expected.LookupNames.Any(n => byGroup["DfE IFC Namer"].Any(d => string.Equals(d.Name, n, StringComparison.Ordinal))),
                     DefinitionExistsAnyGroup = inAnyGroup,
-                    FoundGroup = exact?.Group,
+                    FoundGroup = match?.GroupName,
                     ResolvedName = resolvedName,
                     LegacyFallbackUsed = fallbackUsed,
                     NearMatchesCaseInsensitive = ciMatches,
@@ -386,18 +387,28 @@ namespace DfEIfcNamer.Services
             _diagnostics.AddInfo("SingleParameterBind", "Testing single parameter binding.", new { RequestedParameter = parameterName, TargetParameter = spec.DisplayName });
             try
             {
-                var sharedPath = _parameterService.ResolveSharedParameterFilePath();
                 var file = TryOpenSharedParameterFileWithDiagnostics(doc, "SingleParameterBind");
                 if (file == null)
                 {
                     return;
                 }
 
-                var definition = file.Groups
-                    .Cast<DefinitionGroup>()
-                    .SelectMany(g => spec.LookupNames.Select(n => g.Definitions.get_Item(n) as ExternalDefinition).Where(d => d != null))
-                    .FirstOrDefault();
-                if (definition == null)
+                var groups = file.Groups.Cast<DefinitionGroup>().ToList();
+                var lookup = BuildSharedParameterLookup(groups);
+                _diagnostics.AddInfo("SingleParameterBind", "Available groups and definition counts.", new
+                {
+                    Groups = groups.Select(g => new { Group = g.Name, DefinitionCount = g.Definitions.Size }).ToList()
+                });
+                var match = ResolveDefinitionAcrossGroups(lookup, spec.LookupNames, null);
+                _diagnostics.AddInfo("SingleParameterBind", "Single parameter lookup result.", new
+                {
+                    Parameter = spec.DisplayName,
+                    Candidates = spec.LookupNames,
+                    MatchFound = match != null,
+                    MatchedGroup = match?.GroupName,
+                    MatchedDefinition = match?.Definition?.Name
+                });
+                if (match == null)
                 {
                     _diagnostics.AddError("SingleParameterBind", "Definition could not be resolved for single parameter test.", null, new { spec.DisplayName, Candidates = spec.LookupNames });
                     return;
@@ -413,8 +424,8 @@ namespace DfEIfcNamer.Services
                 var binding = spec.ExpectedBindingType == "type"
                     ? (Binding)doc.Application.Create.NewTypeBinding(catSet)
                     : doc.Application.Create.NewInstanceBinding(catSet);
-                var insert = doc.ParameterBindings.Insert(definition, binding, GroupTypeId.Ifc);
-                var reinsert = insert ? false : doc.ParameterBindings.ReInsert(definition, binding, GroupTypeId.Ifc);
+                var insert = doc.ParameterBindings.Insert(match.Definition, binding, GroupTypeId.Ifc);
+                var reinsert = insert ? false : doc.ParameterBindings.ReInsert(match.Definition, binding, GroupTypeId.Ifc);
                 var map = GetBindingMap(doc);
                 var verified = spec.LookupNames.Any(name => map.ContainsKey(name));
 
@@ -453,6 +464,51 @@ namespace DfEIfcNamer.Services
             }
         }
 
+        private static Dictionary<string, SharedDefinitionMatch> BuildSharedParameterLookup(IEnumerable<DefinitionGroup> groups)
+        {
+            var lookup = new Dictionary<string, SharedDefinitionMatch>(StringComparer.OrdinalIgnoreCase);
+            foreach (var group in groups)
+            {
+                foreach (var definition in group.Definitions.Cast<Definition>().OfType<ExternalDefinition>())
+                {
+                    if (!lookup.ContainsKey(definition.Name))
+                    {
+                        lookup[definition.Name] = new SharedDefinitionMatch(definition, group.Name);
+                    }
+
+                    var guidKey = definition.GUID.ToString("D");
+                    if (!lookup.ContainsKey(guidKey))
+                    {
+                        lookup[guidKey] = new SharedDefinitionMatch(definition, group.Name);
+                    }
+                }
+            }
+
+            return lookup;
+        }
+
+        private static SharedDefinitionMatch ResolveDefinitionAcrossGroups(
+            IReadOnlyDictionary<string, SharedDefinitionMatch> lookup,
+            IEnumerable<string> candidateNames,
+            string preferredGuid)
+        {
+            if (!string.IsNullOrWhiteSpace(preferredGuid) &&
+                lookup.TryGetValue(preferredGuid, out var guidMatch))
+            {
+                return guidMatch;
+            }
+
+            foreach (var candidate in candidateNames ?? Enumerable.Empty<string>())
+            {
+                if (lookup.TryGetValue(candidate, out var nameMatch))
+                {
+                    return nameMatch;
+                }
+            }
+
+            return null;
+        }
+
         private DefinitionFile TryOpenSharedParameterFileWithDiagnostics(Document doc, string stage)
         {
             var sharedPath = _parameterService.ResolveSharedParameterFilePath();
@@ -484,10 +540,15 @@ namespace DfEIfcNamer.Services
             try
             {
                 var file = doc.Application.OpenSharedParameterFile();
-                _diagnostics.Summary.OpenSharedParameterFileSucceeded = file != null;
+                var hasGroups = file != null && file.Groups != null && file.Groups.Size > 0;
+                _diagnostics.Summary.OpenSharedParameterFileSucceeded = hasGroups;
                 if (file == null)
                 {
                     _diagnostics.AddError(stage, "OpenSharedParameterFile returned null.");
+                }
+                else if (!hasGroups)
+                {
+                    _diagnostics.AddError(stage, "OpenSharedParameterFile succeeded but no groups were found.");
                 }
 
                 return file;
@@ -498,6 +559,18 @@ namespace DfEIfcNamer.Services
                 _diagnostics.AddError(stage, "OpenSharedParameterFile threw an exception.", ex);
                 return null;
             }
+        }
+
+        private sealed class SharedDefinitionMatch
+        {
+            public SharedDefinitionMatch(ExternalDefinition definition, string groupName)
+            {
+                Definition = definition;
+                GroupName = groupName;
+            }
+
+            public ExternalDefinition Definition { get; }
+            public string GroupName { get; }
         }
 
         private void RunBindingAttemptDiagnostics(Document doc, IList<ElementId> selectedCategoryIds)
