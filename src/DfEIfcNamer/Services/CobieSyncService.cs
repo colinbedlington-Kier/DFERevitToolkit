@@ -8,6 +8,28 @@ namespace DfEIfcNamer.Services
 {
     public class CobieSyncService
     {
+        private static readonly ParameterExpectation[] ExpectedParameters =
+        {
+            new ParameterExpectation("IfcName", "instance", false, "IfcName", "IFCName"),
+            new ParameterExpectation("IfcDescription", "instance", false, "IfcDescription"),
+            new ParameterExpectation("DfE_IFCPredefinedType", "instance", false, "DfE_IFCPredefinedType"),
+            new ParameterExpectation("DfE_UserDefinedPredefinedTypeValue", "instance", false, "DfE_UserDefinedPredefinedTypeValue"),
+            new ParameterExpectation("DfE_IFCEntity", "instance", false, "DfE_IFCEntity"),
+            new ParameterExpectation("IfcName[Type]", "type", false, "IfcName[Type]", "IFCName[Type]", "IFCName [Type]"),
+            new ParameterExpectation("IfcDescription[Type]", "type", false, "IfcDescription[Type]"),
+            new ParameterExpectation("Classification", "type", false, "Classification"),
+            new ParameterExpectation("Classification(2)", "type", false, "Classification(2)"),
+            new ParameterExpectation("Classification(3)", "type", false, "Classification(3)"),
+            new ParameterExpectation("Classification(4)", "type", false, "Classification(4)"),
+            new ParameterExpectation("Classification(5)", "type", false, "Classification(5)"),
+            new ParameterExpectation("Classification(6)", "type", false, "Classification(6)"),
+            new ParameterExpectation("Classification(7)", "type", false, "Classification(7)"),
+            new ParameterExpectation("Classification(8)", "type", false, "Classification(8)"),
+            new ParameterExpectation("Classification(9)", "type", false, "Classification(9)"),
+            new ParameterExpectation("DfE_ProjectInfoJson", "project info", true, "DfE_ProjectInfoJson"),
+            new ParameterExpectation("DfE_NamingCounters", "project info", true, "DfE_NamingCounters")
+        };
+
         private readonly ParameterService _parameterService;
         private readonly ResourceJsonService _resourceJsonService;
 
@@ -36,6 +58,10 @@ namespace DfEIfcNamer.Services
 
                 status.InstanceParameterBound = IsParameterBound(doc, new[] { "IFCName", "IfcName" }, false, categories);
                 status.TypeParameterBound = IsParameterBound(doc, new[] { "IFCName [Type]", "IFCName[Type]", "IfcName[Type]" }, true, categories);
+                status.ParameterResults = BuildVerificationResults(doc, categories).ToList();
+                status.ParametersRequestedCount = status.ParameterResults.Count;
+                status.VerifiedBoundCount = status.ParameterResults.Count(x => x.FinalBoundState);
+                status.VerificationFailedCount = status.ParameterResults.Count(x => !x.FinalBoundState);
 
                 var errors = new List<string>();
                 if (!status.SharedParameterFileFound)
@@ -88,19 +114,30 @@ namespace DfEIfcNamer.Services
 
             if (!string.IsNullOrWhiteSpace(bindingSummary.ErrorMessage))
             {
-                status.Message = "Assign parameters completed with errors.";
+                status.Message = BuildParameterSummaryMessage(status, false, hasErrors: true);
                 status.ErrorDetails = bindingSummary.ErrorMessage;
             }
             else if (status.VerificationFailedCount == 0 && status.ParametersRequestedCount > 0)
             {
-                status.Message = "Assign Parameters completed successfully.";
+                status.Message = BuildParameterSummaryMessage(status, true, hasErrors: false);
+                status.ErrorDetails = string.Empty;
             }
             else
             {
-                status.Message = "Assign Parameters completed with issues. See parameter results below.";
+                status.Message = BuildParameterSummaryMessage(status, true, hasErrors: true);
+                status.ErrorDetails = string.Empty;
             }
 
             return status;
+        }
+
+        private static string BuildParameterSummaryMessage(SetupStatus status, bool sharedParameterLoaded, bool hasErrors)
+        {
+            var errorCount = hasErrors
+                ? status.VerificationFailedCount + status.FailedBindingInsertCount + (string.IsNullOrWhiteSpace(status.ErrorDetails) ? 0 : 1)
+                : 0;
+
+            return $"Shared parameter file loaded: {(sharedParameterLoaded ? "yes" : "no")} | Bound: {status.ParametersRequestedCount} | Verified: {status.VerifiedBoundCount} | Errors: {errorCount}";
         }
 
         public IList<ProjectParameterOption> GetStringParameters(Document doc, bool isType)
@@ -227,6 +264,140 @@ namespace DfEIfcNamer.Services
             }
 
             return valid;
+        }
+
+        private static IList<ParameterBindingResult> BuildVerificationResults(Document doc, IList<Category> modelCategories)
+        {
+            var results = new List<ParameterBindingResult>();
+            var bindingMap = GetBindingMap(doc);
+            var projectInfoCategory = doc.Settings.Categories.get_Item(BuiltInCategory.OST_ProjectInformation);
+
+            foreach (var expected in ExpectedParameters)
+            {
+                var result = new ParameterBindingResult
+                {
+                    Name = expected.DisplayName,
+                    ExpectedBindingType = expected.ExpectedBindingType,
+                    FoundInSharedParameterFile = true,
+                    BindingAction = "Verify"
+                };
+
+                if (!TryResolveBinding(bindingMap, expected.LookupNames, out var definitionName, out var binding))
+                {
+                    result.FinalBoundState = false;
+                    result.Notes = "Definition not bound in document.";
+                    results.Add(result);
+                    continue;
+                }
+
+                var kindOk = expected.ExpectedBindingType == "type"
+                    ? binding is TypeBinding
+                    : binding is InstanceBinding;
+
+                var categoriesOk = expected.ProjectInfo
+                    ? BindingContainsCategory(binding, projectInfoCategory)
+                    : BindingCoversCategories(binding, modelCategories);
+
+                result.FinalBoundState = kindOk && categoriesOk;
+                if (!kindOk)
+                {
+                    result.Notes = $"Binding kind mismatch for definition '{definitionName}'.";
+                }
+                else if (!categoriesOk)
+                {
+                    result.Notes = "Binding categories do not match expected scope.";
+                }
+
+                results.Add(result);
+            }
+
+            return results;
+        }
+
+        private static Dictionary<string, ElementBinding> GetBindingMap(Document doc)
+        {
+            var map = new Dictionary<string, ElementBinding>(StringComparer.OrdinalIgnoreCase);
+            var iterator = doc.ParameterBindings.ForwardIterator();
+            iterator.Reset();
+
+            while (iterator.MoveNext())
+            {
+                var definition = iterator.Key as Definition;
+                var binding = iterator.Current as ElementBinding;
+                if (definition == null || binding == null)
+                {
+                    continue;
+                }
+
+                map[definition.Name] = binding;
+            }
+
+            return map;
+        }
+
+        private static bool TryResolveBinding(
+            Dictionary<string, ElementBinding> map,
+            IEnumerable<string> lookupNames,
+            out string definitionName,
+            out ElementBinding binding)
+        {
+            foreach (var candidate in lookupNames)
+            {
+                if (map.TryGetValue(candidate, out binding))
+                {
+                    definitionName = candidate;
+                    return true;
+                }
+            }
+
+            definitionName = null;
+            binding = null;
+            return false;
+        }
+
+        private static bool BindingCoversCategories(ElementBinding binding, IList<Category> expectedCategories)
+        {
+            var actual = new HashSet<long>(
+                binding.Categories
+                    .Cast<Category>()
+                    .Where(c => c != null)
+                    .Select(c => c.Id.Value));
+
+            return expectedCategories.All(c => actual.Contains(c.Id.Value));
+        }
+
+        private static bool BindingContainsCategory(ElementBinding binding, Category expectedCategory)
+        {
+            if (expectedCategory == null)
+            {
+                return false;
+            }
+
+            foreach (Category category in binding.Categories.Cast<Category>())
+            {
+                if (category?.Id?.Value == expectedCategory.Id.Value)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private class ParameterExpectation
+        {
+            public ParameterExpectation(string displayName, string expectedBindingType, bool projectInfo, params string[] lookupNames)
+            {
+                DisplayName = displayName;
+                ExpectedBindingType = expectedBindingType;
+                ProjectInfo = projectInfo;
+                LookupNames = lookupNames ?? Array.Empty<string>();
+            }
+
+            public string DisplayName { get; }
+            public string ExpectedBindingType { get; }
+            public bool ProjectInfo { get; }
+            public IList<string> LookupNames { get; }
         }
 
         private static void ProcessElements(Document doc, IList<Element> elements, string sourceParam, string targetParam, OverwriteMode overwriteMode, bool isType, SyncResult result)
