@@ -222,26 +222,6 @@ namespace DfEIfcNamer.Services
                     {
                         result.Notes = $"Resolved shared parameter definition '{resolvedName}' for requested '{spec.DisplayName}'.";
                     }
-
-                    var binding = spec.ExpectedBindingType == "type"
-                        ? (Binding)doc.Application.Create.NewTypeBinding(categorySet)
-                        : doc.Application.Create.NewInstanceBinding(categorySet);
-
-                    result.InsertSucceeded = doc.ParameterBindings.Insert(definition, binding, groupTypeId);
-                    if (result.InsertSucceeded)
-                    {
-                        result.BindingAction = "Insert";
-                    }
-                    else
-                    {
-                        result.ReInsertSucceeded = doc.ParameterBindings.ReInsert(definition, binding, groupTypeId);
-                        result.BindingAction = result.ReInsertSucceeded ? "ReInsert" : "Insert/ReInsert failed";
-                    }
-
-                    if (!string.Equals(resolvedName, spec.DisplayName, StringComparison.Ordinal))
-                    {
-                        result.Notes = $"Resolved shared parameter definition '{resolvedName}' for requested '{spec.DisplayName}'.";
-                    }
                 }
                 catch (Exception ex)
                 {
@@ -285,28 +265,6 @@ namespace DfEIfcNamer.Services
                     result.Notes = AppendNote(result.Notes, "Definition not bound in document.");
                     continue;
                 }
-            }
-
-            binding = null;
-            definitionName = null;
-            return false;
-        }
-
-        private static bool BindingCoversCategories(ElementBinding binding, IList<Category> expectedCategories)
-        {
-            var actual = new HashSet<long>(binding.Categories.Cast<Category>().Where(c => c != null).Select(c => c.Id.Value));
-            return expectedCategories.All(c => actual.Contains(c.Id.Value));
-        }
-
-        private static bool BindingContainsCategory(ElementBinding binding, Category expectedCategory)
-        {
-            if (expectedCategory == null)
-            {
-                return false;
-            }
-
-            return binding.Categories.Cast<Category>().Any(c => c != null && c.Id.Value == expectedCategory.Id.Value);
-        }
 
                 var kindOk = spec.ExpectedBindingType == "type" ? binding is TypeBinding : binding is InstanceBinding;
                 var categoriesOk = spec.ExpectedBindingType == "project info"
@@ -318,103 +276,9 @@ namespace DfEIfcNamer.Services
                 {
                     result.Notes = AppendNote(result.Notes, "Binding kind mismatch for definition '" + definitionName + "'.");
                 }
-                catch (Exception ex)
-                {
-                    result.Notes = ex.Message;
-                    result.BindingAction = "Exception";
-                    summary.FailedBindingInsertCount++;
-                }
-
-                summary.ParameterResults.Add(result);
-            }
-        }
-
-        private static ExternalDefinition ResolveDefinition(DefinitionGroup group, ParameterSpec spec, out string resolvedName)
-        {
-            foreach (var candidate in spec.LookupNames)
-            {
-                var definition = group.Definitions.get_Item(candidate) as ExternalDefinition;
-                if (definition != null)
-                {
-                    resolvedName = candidate;
-                    return definition;
-                }
             }
 
-            resolvedName = null;
-            return null;
-        }
-
-        private static void VerifyBindings(Document doc, IList<Category> modelCategories, Category projectInfoCategory, ParameterBindingSummary summary)
-        {
-            var bindingMap = GetBindingMap(doc);
-            foreach (var result in summary.ParameterResults)
-            {
-                var spec = AllSpecs().First(s => s.DisplayName == result.Name);
-                string definitionName;
-                ElementBinding binding;
-                var bound = ResolveBinding(bindingMap, spec, out definitionName, out binding);
-                if (!bound || binding == null)
-                {
-                    result.FinalBoundState = false;
-                    result.Notes = AppendNote(result.Notes, "Definition not bound in document.");
-                    continue;
-                }
-            }
-        }
-
-                var kindOk = spec.ExpectedBindingType == "type" ? binding is TypeBinding : binding is InstanceBinding;
-                var categoriesOk = spec.ExpectedBindingType == "project info"
-                    ? BindingContainsCategory(binding, projectInfoCategory)
-                    : BindingCoversCategories(binding, modelCategories);
-
-                result.FinalBoundState = kindOk && categoriesOk;
-                if (!kindOk)
-                {
-                    result.Notes = AppendNote(result.Notes, "Binding kind mismatch for definition '" + definitionName + "'.");
-                }
-
-                if (!categoriesOk)
-                {
-                    result.Notes = AppendNote(result.Notes, "Binding categories do not match expected scope.");
-                }
-            }
-
-            return map;
-        }
-
-        private static bool ResolveBinding(Dictionary<string, ElementBinding> map, ParameterSpec spec, out string definitionName, out ElementBinding binding)
-        {
-            foreach (var candidate in spec.LookupNames)
-            {
-                ElementBinding resolvedBinding;
-                if (map.TryGetValue(candidate, out resolvedBinding))
-                {
-                    definitionName = candidate;
-                    binding = resolvedBinding;
-                    return true;
-                }
-            }
-
-            binding = null;
-            definitionName = null;
             return false;
-        }
-
-        private static bool BindingCoversCategories(ElementBinding binding, IList<Category> expectedCategories)
-        {
-            var actual = new HashSet<long>(binding.Categories.Cast<Category>().Where(c => c != null).Select(c => c.Id.Value));
-            return expectedCategories.All(c => actual.Contains(c.Id.Value));
-        }
-
-        private static bool BindingContainsCategory(ElementBinding binding, Category expectedCategory)
-        {
-            if (expectedCategory == null)
-            {
-                return false;
-            }
-
-            return binding.Categories.Cast<Category>().Any(c => c != null && c.Id.Value == expectedCategory.Id.Value);
         }
 
         private static bool EnsureSharedParameterFileConfigured(Autodesk.Revit.ApplicationServices.Application app, string sharedPath)
@@ -438,11 +302,10 @@ namespace DfEIfcNamer.Services
             return existing + " | " + next;
         }
 
-        private static string AppendNote(string existing, string note)
-        {
-            if (string.IsNullOrWhiteSpace(existing))
-            {
-                return note;
+                if (!categoriesOk)
+                {
+                    result.Notes = AppendNote(result.Notes, "Binding categories do not match expected scope.");
+                }
             }
 
             return existing + " " + note;
@@ -550,7 +413,7 @@ namespace DfEIfcNamer.Services
             }
 
             var expectedId = expectedCategory.Id.Value;
-            foreach (var category in binding.Categories.Cast<Category>())
+            foreach (Category category in binding.Categories.Cast<Category>())
             {
                 if (category == null)
                 {
