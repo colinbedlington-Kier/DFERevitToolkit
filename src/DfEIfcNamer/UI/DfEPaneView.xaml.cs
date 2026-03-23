@@ -63,6 +63,9 @@ namespace DfEIfcNamer.UI
                     "Total insert successes: " + (summary?.TotalInsertSuccesses ?? 0) + "\n" +
                     "Total reinsert successes: " + (summary?.TotalReInsertSuccesses ?? 0) + "\n" +
                     "Total verified: " + (summary?.TotalVerified ?? 0) + "\n" +
+                    "IFC classes loaded: " + (summary?.IfcClassesLoaded ?? 0) + "\n" +
+                    "IFC predefined types loaded: " + (summary?.IfcPredefinedTypesLoaded ?? 0) + "\n" +
+                    "Invalid IFC metadata count: " + (summary?.InvalidIfcMetadataCount ?? 0) + "\n" +
                     "========================================\n\n";
                 Clipboard.SetText(header + (state?.PlainTextLog ?? string.Empty));
             });
@@ -93,6 +96,9 @@ namespace DfEIfcNamer.UI
                         "Total insert successes: " + (summary?.TotalInsertSuccesses ?? 0) + "\n" +
                         "Total reinsert successes: " + (summary?.TotalReInsertSuccesses ?? 0) + "\n" +
                         "Total verified: " + (summary?.TotalVerified ?? 0) + "\n" +
+                        "IFC classes loaded: " + (summary?.IfcClassesLoaded ?? 0) + "\n" +
+                        "IFC predefined types loaded: " + (summary?.IfcPredefinedTypesLoaded ?? 0) + "\n" +
+                        "Invalid IFC metadata count: " + (summary?.InvalidIfcMetadataCount ?? 0) + "\n" +
                         "========================================\n\n" +
                         (state?.PlainTextLog ?? string.Empty);
                     File.WriteAllText(dialog.FileName, payload);

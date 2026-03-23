@@ -64,8 +64,11 @@ namespace DfEIfcNamer.Services
                 status.SharedParameterFileFound = System.IO.File.Exists(status.SharedParameterFilePath);
                 status.EntityMappingFileExists = System.IO.File.Exists(status.EntityMappingJsonPath);
                 status.ClassificationSlotsFileExists = System.IO.File.Exists(status.ClassificationSlotsJsonPath);
-                status.EntityMappingLoaded = TryLoad(() => _resourceJsonService.LoadEntityLibrary(), out var entityError);
+                var entityLibrary = SafeLoadEntityLibrary(out var entityError);
+                status.EntityMappingLoaded = string.IsNullOrWhiteSpace(entityError) && entityLibrary != null;
                 status.ClassificationSlotsLoaded = TryLoad(() => _resourceJsonService.LoadClassificationSlots(), out var classificationError);
+                status.IfcClassesLoadedCount = entityLibrary?.Count ?? 0;
+                status.IfcPredefinedTypesLoadedCount = entityLibrary?.Sum(x => x.PredefinedTypes?.Count ?? 0) ?? 0;
 
                 status.InstanceParameterBound = IsParameterBound(doc, new[] { "IFCName", "IfcName" }, false, categories);
                 status.TypeParameterBound = IsParameterBound(doc, new[] { "IFCName [Type]", "IFCName[Type]", "IfcName[Type]" }, true, categories);
@@ -73,6 +76,16 @@ namespace DfEIfcNamer.Services
                 status.ParametersRequestedCount = status.ParameterResults.Count;
                 status.VerifiedBoundCount = status.ParameterResults.Count(x => x.FinalBoundState);
                 status.VerificationFailedCount = status.ParameterResults.Count(x => !x.FinalBoundState);
+                status.InvalidIfcMetadataNotes = ValidateIfcMetadataAgainstLibrary(doc, entityLibrary);
+                status.InvalidIfcMetadataCount = status.InvalidIfcMetadataNotes.Count;
+                if (status.InvalidIfcMetadataCount > 0)
+                {
+                    _diagnostics.AddWarning("IfcValidation", "Invalid IFC entity/predefined type combinations were found.", new
+                    {
+                        status.InvalidIfcMetadataCount,
+                        Notes = status.InvalidIfcMetadataNotes.Take(40).ToList()
+                    });
+                }
 
                 var errors = new List<string>();
                 if (!status.SharedParameterFileFound)
@@ -88,6 +101,10 @@ namespace DfEIfcNamer.Services
                 if (!status.ClassificationSlotsLoaded && !string.IsNullOrWhiteSpace(classificationError))
                 {
                     errors.Add(classificationError);
+                }
+                if (status.InvalidIfcMetadataCount > 0)
+                {
+                    errors.Add("Invalid IFC entity/predefined combinations: " + status.InvalidIfcMetadataCount);
                 }
 
                 status.ErrorDetails = string.Join(" | ", errors);
@@ -667,6 +684,9 @@ namespace DfEIfcNamer.Services
             _diagnostics.Summary.TotalInsertSuccesses = status?.InsertSucceededCount ?? 0;
             _diagnostics.Summary.TotalReInsertSuccesses = status?.ReInsertSucceededCount ?? 0;
             _diagnostics.Summary.TotalVerified = status?.VerifiedBoundCount ?? 0;
+            _diagnostics.Summary.IfcClassesLoaded = status?.IfcClassesLoadedCount ?? 0;
+            _diagnostics.Summary.IfcPredefinedTypesLoaded = status?.IfcPredefinedTypesLoadedCount ?? 0;
+            _diagnostics.Summary.InvalidIfcMetadataCount = status?.InvalidIfcMetadataCount ?? 0;
             _diagnostics.Summary.LastSuccessfulBinding = status?.ParameterResults?.FirstOrDefault(r => r.InsertSucceeded || r.ReInsertSucceeded)?.Name;
             _diagnostics.Summary.LastFailedBinding = status?.ParameterResults?.FirstOrDefault(r => !r.FinalBoundState)?.Name;
             _diagnostics.Summary.LastSuccessfulParameterFound = status?.ParameterResults?.FirstOrDefault(r => r.FoundInSharedParameterFile)?.Name;
@@ -703,6 +723,126 @@ namespace DfEIfcNamer.Services
                 error = ex.Message;
                 return false;
             }
+        }
+
+        private IList<IfcEntityDefinition> SafeLoadEntityLibrary(out string error)
+        {
+            try
+            {
+                var loaded = _resourceJsonService.LoadEntityLibrary() ?? new List<IfcEntityDefinition>();
+                error = null;
+                _diagnostics.AddInfo("IfcMatrix", "Loaded IFC entity mapping JSON.", new
+                {
+                    ClassCount = loaded.Count,
+                    PredefinedTypeCount = loaded.Sum(x => x.PredefinedTypes?.Count ?? 0),
+                    Path = _resourceJsonService.ResolveEntityMappingPath(),
+                    Matrix = loaded.Select(x => new
+                    {
+                        x.DisplayName,
+                        x.IFCClassToken,
+                        x.ExportAs,
+                        x.ExportType,
+                        x.NameFormat,
+                        PredefinedTypes = x.PredefinedTypes ?? new List<string>()
+                    }).ToList()
+                });
+                return loaded;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                _diagnostics.AddError("IfcMatrix", "Failed to load IFC entity mapping JSON.", ex, new
+                {
+                    Path = _resourceJsonService.ResolveEntityMappingPath()
+                });
+                return new List<IfcEntityDefinition>();
+            }
+        }
+
+        private static IList<string> ValidateIfcMetadataAgainstLibrary(Document doc, IList<IfcEntityDefinition> library)
+        {
+            var notes = new List<string>();
+            if (library == null || library.Count == 0)
+            {
+                notes.Add("IFC entity mapping JSON is empty; cannot validate IFC metadata values.");
+                return notes;
+            }
+
+            var entityRules = library
+                .Where(x => !string.IsNullOrWhiteSpace(x.IFCClassToken))
+                .ToDictionary(
+                    x => x.IFCClassToken,
+                    x => new HashSet<string>((x.PredefinedTypes ?? new List<string>()).Where(p => !string.IsNullOrWhiteSpace(p)), StringComparer.OrdinalIgnoreCase),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var elements = new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Take(1000)
+                .ToList();
+
+            foreach (var element in elements)
+            {
+                var entity = LookupFirst(element, "DfE_IFCEntity")?.AsString();
+                var predefined = LookupFirst(element, "DfE_IFCPredefinedType")?.AsString();
+                var userDefined = LookupFirst(element, "DfE_UserDefinedPredefinedTypeValue")?.AsString();
+
+                if (string.IsNullOrWhiteSpace(entity) && string.IsNullOrWhiteSpace(predefined) && string.IsNullOrWhiteSpace(userDefined))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(entity))
+                {
+                    notes.Add($"{element.Id}: DfE_IFCEntity is empty while IFC metadata exists.");
+                    continue;
+                }
+
+                if (!entityRules.TryGetValue(entity.Trim(), out var allowed))
+                {
+                    notes.Add($"{element.Id}: DfE_IFCEntity '{entity}' is not in JSON-supported IFC classes.");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(predefined))
+                {
+                    notes.Add($"{element.Id}: DfE_IFCPredefinedType is empty for entity '{entity}'.");
+                    continue;
+                }
+
+                if (!allowed.Contains(predefined.Trim()))
+                {
+                    notes.Add($"{element.Id}: DfE_IFCPredefinedType '{predefined}' is invalid for entity '{entity}'.");
+                    continue;
+                }
+
+                if (string.Equals(predefined.Trim(), "USERDEFINED", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.IsNullOrWhiteSpace(userDefined))
+                    {
+                        notes.Add($"{element.Id}: USERDEFINED selected but DfE_UserDefinedPredefinedTypeValue is blank.");
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(userDefined))
+                {
+                    notes.Add($"{element.Id}: DfE_UserDefinedPredefinedTypeValue should be blank when predefined type is '{predefined}'.");
+                }
+            }
+
+            return notes;
+        }
+
+        private static Parameter LookupFirst(Element element, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                var parameter = element.LookupParameter(name);
+                if (parameter != null)
+                {
+                    return parameter;
+                }
+            }
+
+            return null;
         }
 
         private static IList<Category> GetModelCategories(Document doc, IList<ElementId> selected, out int skippedUnsupported)
