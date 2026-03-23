@@ -23,7 +23,8 @@
                     <StackPanel Grid.Row="1" Margin="0,10,0,0">
                         <TextBlock Text="Parameter status" FontWeight="Bold"/>
                         <TextBlock Text="{Binding SetupStatus}" Margin="0,4,0,0"/>
-                        <TextBlock Text="{Binding CoverageStatus}" Margin="0,4,0,0"/>
+                        <TextBlock Text="Setup diagnostics" FontWeight="Bold" Margin="0,12,0,4"/>
+                        <TextBlock Text="{Binding CoverageStatus}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                         <TextBlock Text="Included Categories" Margin="0,12,0,4" FontWeight="Bold"/>
                         <ListBox ItemsSource="{Binding Categories}" Height="360">
                             <ListBox.ItemTemplate>
