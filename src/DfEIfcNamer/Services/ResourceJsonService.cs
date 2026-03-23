@@ -12,6 +12,8 @@ namespace DfEIfcNamer.Services
     {
         private const string EntityResource = "DfEIfcNamer.Resources.ifc2x3_entity_predefinedtypes.json";
         private const string ClassificationResource = "DfEIfcNamer.Resources.classification_slots.json";
+        private const string EntityFileName = "ifc2x3_entity_predefinedtypes.json";
+        private const string ClassificationFileName = "classification_slots.json";
         private static readonly JsonSerializerOptions JsonOpts = new()
         {
             PropertyNameCaseInsensitive = true,
@@ -20,15 +22,35 @@ namespace DfEIfcNamer.Services
             WriteIndented = true
         };
 
+        public string ResolveAddinFolder()
+        {
+            return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
+        }
+
+        public string ResolveResourceFilePath(string fileName)
+        {
+            var addinFolder = ResolveAddinFolder();
+            var resourceFolderPath = Path.Combine(addinFolder, "Resources", fileName);
+            if (File.Exists(resourceFolderPath))
+            {
+                return resourceFolderPath;
+            }
+
+            return Path.Combine(addinFolder, fileName);
+        }
+
+        public string ResolveEntityMappingPath() => ResolveResourceFilePath(EntityFileName);
+        public string ResolveClassificationSlotsPath() => ResolveResourceFilePath(ClassificationFileName);
+
         public IList<IfcEntityDefinition> LoadEntityLibrary()
         {
-            var json = ReadEmbedded(EntityResource);
+            var json = ReadWithFallback(ResolveEntityMappingPath(), EntityResource);
             return JsonSerializer.Deserialize<List<IfcEntityDefinition>>(json, JsonOpts) ?? new List<IfcEntityDefinition>();
         }
 
         public IList<ClassificationSlot> LoadClassificationSlots()
         {
-            var json = ReadEmbedded(ClassificationResource);
+            var json = ReadWithFallback(ResolveClassificationSlotsPath(), ClassificationResource);
             return JsonSerializer.Deserialize<List<ClassificationSlot>>(json, JsonOpts) ?? new List<ClassificationSlot>();
         }
 
@@ -50,12 +72,29 @@ namespace DfEIfcNamer.Services
             File.WriteAllText(path, json ?? "{}");
         }
 
+        private static string ReadWithFallback(string diskPath, string embeddedName)
+        {
+            if (File.Exists(diskPath))
+            {
+                return File.ReadAllText(diskPath);
+            }
+
+            return ReadEmbedded(embeddedName);
+        }
+
         private static string ReadEmbedded(string name)
         {
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name))
-            using (var reader = new StreamReader(stream))
             {
-                return reader.ReadToEnd();
+                if (stream == null)
+                {
+                    throw new FileNotFoundException("Embedded resource not found: " + name);
+                }
+
+                using (var reader = new StreamReader(stream))
+                {
+                    return reader.ReadToEnd();
+                }
             }
         }
     }

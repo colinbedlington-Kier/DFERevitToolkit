@@ -17,11 +17,42 @@ namespace DfEIfcNamer.Models
 
     public class SetupStatus
     {
+        public string ResolvedAddinFolder { get; set; }
+        public string SharedParameterFilePath { get; set; }
+        public string EntityMappingJsonPath { get; set; }
+        public string ClassificationSlotsJsonPath { get; set; }
         public bool SharedParameterFileFound { get; set; }
+        public bool EntityMappingFileExists { get; set; }
+        public bool ClassificationSlotsFileExists { get; set; }
+        public bool EntityMappingLoaded { get; set; }
+        public bool ClassificationSlotsLoaded { get; set; }
         public bool InstanceParameterBound { get; set; }
         public bool TypeParameterBound { get; set; }
-        public int MissingCategoryBindings { get; set; }
+        public int IncludedCategoriesCount { get; set; }
+        public int SkippedUnsupportedCategoriesCount { get; set; }
+        public int FailedBindingInsertCount { get; set; }
+        public int ParametersRequestedCount { get; set; }
+        public int ParametersFoundInSharedFileCount { get; set; }
+        public int InsertSucceededCount { get; set; }
+        public int ReInsertSucceededCount { get; set; }
+        public int VerifiedBoundCount { get; set; }
+        public int VerificationFailedCount { get; set; }
+        public IList<string> IncludedCategoryNames { get; set; } = new List<string>();
+        public IList<ParameterBindingResult> ParameterResults { get; set; } = new List<ParameterBindingResult>();
         public string Message { get; set; }
+        public string ErrorDetails { get; set; }
+    }
+
+    public class ParameterBindingResult
+    {
+        public string Name { get; set; }
+        public string ExpectedBindingType { get; set; }
+        public bool FoundInSharedParameterFile { get; set; }
+        public bool InsertSucceeded { get; set; }
+        public bool ReInsertSucceeded { get; set; }
+        public bool FinalBoundState { get; set; }
+        public string BindingAction { get; set; }
+        public string Notes { get; set; }
     }
 
     public class MappingSettings
@@ -32,7 +63,7 @@ namespace DfEIfcNamer.Models
         public string TypeTarget { get; set; } = "COBie.Type.Name";
         public SyncScope Scope { get; set; } = SyncScope.EntireModel;
         public OverwriteMode OverwriteMode { get; set; } = OverwriteMode.BlankOnly;
-        public List<int> CategoryIds { get; set; } = new List<int>();
+        public List<long> CategoryIds { get; set; } = new List<long>();
         public DateTime? LastSyncUtc { get; set; }
     }
 
