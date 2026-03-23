@@ -6,6 +6,7 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using Autodesk.Revit.DB;
 using DfEIfcNamer.Models;
+using Autodesk.Revit.DB.ExtensibleStorage;
 
 namespace DfEIfcNamer.Services
 {
