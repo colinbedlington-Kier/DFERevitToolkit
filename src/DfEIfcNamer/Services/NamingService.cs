@@ -29,7 +29,7 @@ namespace DfEIfcNamer.Services
                     tx.Start();
                     foreach (var row in rows)
                     {
-                        var type = doc.GetElement(new ElementId(row.ElementId));
+                        var type = doc.GetElement(new ElementId((long)row.ElementId));
                         if (type == null) continue;
 
                         var ifcClass = NameFormatting.SafeIfcToken(row.IfcClassToken);
@@ -63,7 +63,7 @@ namespace DfEIfcNamer.Services
         {
             var counters = _counterService.LoadCounters(doc);
             var instanceElements = ResolveScopeElements(doc, scope);
-            var maxDigits = instanceElements.Any() ? instanceElements.Max(x => x.Id.IntegerValue).ToString().Length : 6;
+            var maxDigits = instanceElements.Any() ? instanceElements.Max(x => x.Id.Value).ToString().Length : 6;
 
             using (var tg = new TransactionGroup(doc, "DfE Apply Instance IFC Naming"))
             {
@@ -82,7 +82,7 @@ namespace DfEIfcNamer.Services
                         string sequence;
                         if (string.Equals(numberingMode, "ElementId", StringComparison.OrdinalIgnoreCase))
                         {
-                            sequence = element.Id.IntegerValue.ToString().PadLeft(maxDigits, '0');
+                            sequence = element.Id.Value.ToString().PadLeft(maxDigits, '0');
                         }
                         else
                         {

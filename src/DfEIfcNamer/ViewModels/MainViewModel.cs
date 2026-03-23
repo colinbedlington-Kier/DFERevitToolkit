@@ -111,7 +111,7 @@ namespace DfEIfcNamer.ViewModels
                     Categories.Clear();
                     foreach (var category in r.Categories ?? Enumerable.Empty<Category>())
                     {
-                        Categories.Add(new CategorySelectionItem { Id = category.Id.IntegerValue, Name = category.Name, IsSelected = true });
+                        Categories.Add(new CategorySelectionItem { Id = category.Id.Value, Name = category.Name, IsSelected = true });
                     }
                 }
             });
@@ -133,7 +133,7 @@ namespace DfEIfcNamer.ViewModels
 
                     var status = r.SetupStatus;
                     SetupStatus = status.SharedParameterFileFound && status.InstanceParameterBound && status.TypeParameterBound ? "✓ Parameters configured" : "⚠ Setup required";
-                    CoverageStatus = $"Missing category bindings: {status.MissingCategoryBindings}";
+                    CoverageStatus = BuildCoverageStatus(status);
                     Logs.Add($"Check: {status.Message}");
                 }
             });
@@ -154,7 +154,7 @@ namespace DfEIfcNamer.ViewModels
                     }
 
                     SetupStatus = "✓ Parameters assigned";
-                    CoverageStatus = $"Missing category bindings: {r.SetupStatus.MissingCategoryBindings}";
+                    CoverageStatus = BuildCoverageStatus(r.SetupStatus);
                     Logs.Add("Assign Parameters executed.");
                 }
             });
@@ -221,11 +221,37 @@ namespace DfEIfcNamer.ViewModels
                 }
             });
         }
+
+        private static string BuildCoverageStatus(SetupStatus status)
+        {
+            if (status == null)
+            {
+                return "No setup diagnostics available.";
+            }
+
+            var errorDetails = string.IsNullOrWhiteSpace(status.ErrorDetails) ? "None" : status.ErrorDetails;
+            return
+                $"Resolved add-in folder: {status.ResolvedAddinFolder}\n" +
+                $"Shared parameter file path: {status.SharedParameterFilePath}\n" +
+                $"Shared parameter file exists: {YesNo(status.SharedParameterFileFound)}\n" +
+                $"Entity mapping JSON path: {status.EntityMappingJsonPath}\n" +
+                $"Entity mapping JSON exists: {YesNo(status.EntityMappingFileExists)}\n" +
+                $"Entity mapping JSON loaded: {YesNo(status.EntityMappingLoaded)}\n" +
+                $"Classification slots JSON path: {status.ClassificationSlotsJsonPath}\n" +
+                $"Classification slots JSON exists: {YesNo(status.ClassificationSlotsFileExists)}\n" +
+                $"Classification slots JSON loaded: {YesNo(status.ClassificationSlotsLoaded)}\n" +
+                $"Included categories: {status.IncludedCategoriesCount}\n" +
+                $"Skipped unsupported categories: {status.SkippedUnsupportedCategoriesCount}\n" +
+                $"Binding failures: {status.FailedBindingInsertCount}\n" +
+                $"Error details: {errorDetails}";
+        }
+
+        private static string YesNo(bool value) => value ? "yes" : "no";
     }
 
     public class CategorySelectionItem : ViewModelBase
     {
-        public int Id { get; set; }
+        public long Id { get; set; }
         public string Name { get; set; }
 
         private bool _isSelected;
