@@ -265,6 +265,7 @@ namespace DfEIfcNamer.Services
                     result.Notes = AppendNote(result.Notes, "Definition not bound in document.");
                     continue;
                 }
+            }
 
                 var kindOk = spec.ExpectedBindingType == "type" ? binding is TypeBinding : binding is InstanceBinding;
                 var categoriesOk = spec.ExpectedBindingType == "project info"
@@ -275,6 +276,11 @@ namespace DfEIfcNamer.Services
                 if (!kindOk)
                 {
                     result.Notes = AppendNote(result.Notes, "Binding kind mismatch for definition '" + definitionName + "'.");
+                }
+
+                if (!categoriesOk)
+                {
+                    result.Notes = AppendNote(result.Notes, "Binding categories do not match expected scope.");
                 }
             }
 
@@ -302,10 +308,11 @@ namespace DfEIfcNamer.Services
             return existing + " | " + next;
         }
 
-                if (!categoriesOk)
-                {
-                    result.Notes = AppendNote(result.Notes, "Binding categories do not match expected scope.");
-                }
+        private static string AppendNote(string existing, string note)
+        {
+            if (string.IsNullOrWhiteSpace(existing))
+            {
+                return note;
             }
 
             return existing + " " + note;
@@ -385,11 +392,9 @@ namespace DfEIfcNamer.Services
         {
             foreach (var candidate in spec.LookupNames)
             {
-                ElementBinding resolvedBinding;
-                if (map.TryGetValue(candidate, out resolvedBinding))
+                if (map.TryGetValue(candidate, out binding))
                 {
                     definitionName = candidate;
-                    binding = resolvedBinding;
                     return true;
                 }
             }
