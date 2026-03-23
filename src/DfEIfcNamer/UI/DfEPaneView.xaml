@@ -38,11 +38,12 @@
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="170"/>
                                 <DataGridTextColumn Header="Expected" Binding="{Binding ExpectedBindingType}" Width="80"/>
-                                <DataGridTextColumn Header="In SP File" Binding="{Binding FoundInSharedParameterFile}" Width="70"/>
-                                <DataGridTextColumn Header="Insert" Binding="{Binding InsertSucceeded}" Width="60"/>
-                                <DataGridTextColumn Header="ReInsert" Binding="{Binding ReInsertSucceeded}" Width="70"/>
-                                <DataGridTextColumn Header="Verified" Binding="{Binding FinalBoundState}" Width="70"/>
-                                <DataGridTextColumn Header="Action" Binding="{Binding BindingAction}" Width="90"/>
+                                <DataGridTextColumn Header="In SP File" Binding="{Binding FoundInSharedParameterFile}" Width="75"/>
+                                <DataGridTextColumn Header="Bind Attempted" Binding="{Binding InsertAttempted}" Width="90"/>
+                                <DataGridTextColumn Header="Insert/ReInsert Result" Binding="{Binding BindingAction}" Width="110"/>
+                                <DataGridTextColumn Header="Diagnostic Only" Binding="{Binding DiagnosticRollbackUsed}" Width="90"/>
+                                <DataGridTextColumn Header="Persisted" Binding="{Binding PersistedToModel}" Width="70"/>
+                                <DataGridTextColumn Header="Verification" Binding="{Binding VerificationStatus}" Width="90"/>
                                 <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="*"/>
                             </DataGrid.Columns>
                         </DataGrid>

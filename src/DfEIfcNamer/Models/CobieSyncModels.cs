@@ -50,10 +50,20 @@ namespace DfEIfcNamer.Models
     public class ParameterBindingResult
     {
         public string Name { get; set; }
+        public string RequestedName { get; set; }
+        public string ResolvedDefinitionName { get; set; }
+        public string ResolvedGroup { get; set; }
+        public string BindingType { get; set; }
         public string ExpectedBindingType { get; set; }
         public bool FoundInSharedParameterFile { get; set; }
+        public bool InsertAttempted { get; set; }
         public bool InsertSucceeded { get; set; }
+        public bool ReInsertAttempted { get; set; }
         public bool ReInsertSucceeded { get; set; }
+        public bool ExistingBindingPresent { get; set; }
+        public bool DiagnosticRollbackUsed { get; set; }
+        public bool PersistedToModel { get; set; }
+        public string VerificationStatus { get; set; }
         public bool FinalBoundState { get; set; }
         public string BindingAction { get; set; }
         public string Notes { get; set; }
