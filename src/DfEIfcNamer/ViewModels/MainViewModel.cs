@@ -25,7 +25,7 @@ namespace DfEIfcNamer.ViewModels
             Logs = new ObservableCollection<string>();
 
             InstanceSource = "IFCName";
-            TypeSource = "IFCName[Type]";
+            TypeSource = "IFCName [Type]";
             InstanceTarget = "COBie.Component.Name";
             TypeTarget = "COBie.Type.Name";
             SelectedScope = ScopeOptions[0];
@@ -168,12 +168,16 @@ namespace DfEIfcNamer.ViewModels
                 Callback = r =>
                 {
                     var settings = r.Settings ?? new MappingSettings();
+                    InstanceSource = string.IsNullOrWhiteSpace(settings.InstanceSource) ? "IFCName" : settings.InstanceSource;
+                    TypeSource = string.IsNullOrWhiteSpace(settings.TypeSource) ? "IFCName [Type]" : settings.TypeSource;
                     InstanceTarget = string.IsNullOrWhiteSpace(settings.InstanceTarget) ? "COBie.Component.Name" : settings.InstanceTarget;
                     TypeTarget = string.IsNullOrWhiteSpace(settings.TypeTarget) ? "COBie.Type.Name" : settings.TypeTarget;
                     SelectedScope = settings.Scope == SyncScope.ActiveView ? ScopeOptions[1] : ScopeOptions[0];
                     SelectedOverwrite = settings.OverwriteMode == OverwriteMode.OverwriteAlways ? OverwriteOptions[1] : OverwriteOptions[0];
                     LastSyncStatus = settings.LastSyncUtc.HasValue ? "Last sync: " + settings.LastSyncUtc.Value.ToLocalTime().ToString("g") : "Last sync: never";
                     MappingLoadedStatus = "Mapping loaded: yes";
+                    RaisePropertyChanged(nameof(InstanceSource));
+                    RaisePropertyChanged(nameof(TypeSource));
                     RaisePropertyChanged(nameof(InstanceTarget));
                     RaisePropertyChanged(nameof(TypeTarget));
                 }

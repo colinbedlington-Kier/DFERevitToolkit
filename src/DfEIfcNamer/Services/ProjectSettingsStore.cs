@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using Autodesk.Revit.DB;
 using DfEIfcNamer.Models;
 
@@ -23,6 +24,8 @@ namespace DfEIfcNamer.Services
                 {
                     return new MappingSettings
                     {
+                        InstanceSource = string.IsNullOrWhiteSpace(entity.Get<string>("InstanceSource")) ? "IFCName" : entity.Get<string>("InstanceSource"),
+                        TypeSource = string.IsNullOrWhiteSpace(entity.Get<string>("TypeSource")) ? "IFCName [Type]" : entity.Get<string>("TypeSource"),
                         InstanceTarget = entity.Get<string>("InstanceTarget"),
                         TypeTarget = entity.Get<string>("TypeTarget"),
                         Scope = (SyncScope)entity.Get<int>("Scope"),
@@ -46,6 +49,8 @@ namespace DfEIfcNamer.Services
             {
                 var schema = EnsureSchema();
                 var entity = new Entity(schema);
+                entity.Set("InstanceSource", settings.InstanceSource ?? "IFCName");
+                entity.Set("TypeSource", settings.TypeSource ?? "IFCName [Type]");
                 entity.Set("InstanceTarget", settings.InstanceTarget ?? string.Empty);
                 entity.Set("TypeTarget", settings.TypeTarget ?? string.Empty);
                 entity.Set("Scope", (int)settings.Scope);
@@ -71,6 +76,8 @@ namespace DfEIfcNamer.Services
 
             var builder = new SchemaBuilder(SchemaGuid);
             builder.SetSchemaName(SchemaName);
+            builder.AddSimpleField("InstanceSource", typeof(string));
+            builder.AddSimpleField("TypeSource", typeof(string));
             builder.AddSimpleField("InstanceTarget", typeof(string));
             builder.AddSimpleField("TypeTarget", typeof(string));
             builder.AddSimpleField("Scope", typeof(int));
@@ -88,19 +95,18 @@ namespace DfEIfcNamer.Services
             var folder = Path.Combine(appData, "DfEIfcNamer");
             Directory.CreateDirectory(folder);
             var safe = string.Join("_", projectName.Split(Path.GetInvalidFileNameChars()));
-            return Path.Combine(folder, safe + ".mapping.txt");
+            return Path.Combine(folder, safe + ".mapping.json");
         }
 
         private static void SaveToFile(string projectName, MappingSettings settings)
         {
-            var line = string.Join("|",
-                settings.InstanceTarget ?? string.Empty,
-                settings.TypeTarget ?? string.Empty,
-                (int)settings.Scope,
-                (int)settings.OverwriteMode,
-                string.Join(",", settings.CategoryIds ?? new System.Collections.Generic.List<int>()),
-                settings.LastSyncUtc?.ToString("o") ?? string.Empty);
-            File.WriteAllText(GetFallbackPath(projectName), line, Encoding.UTF8);
+            var snapshot = MappingSettingsSnapshot.From(settings);
+            var path = GetFallbackPath(projectName);
+            using (var stream = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                var serializer = new DataContractJsonSerializer(typeof(MappingSettingsSnapshot));
+                serializer.WriteObject(stream, snapshot);
+            }
         }
 
         private static MappingSettings LoadFromFile(string projectName)
@@ -111,15 +117,62 @@ namespace DfEIfcNamer.Services
                 return new MappingSettings();
             }
 
-            var parts = File.ReadAllText(path).Split('|');
-            var result = new MappingSettings();
-            if (parts.Length > 0) result.InstanceTarget = parts[0];
-            if (parts.Length > 1) result.TypeTarget = parts[1];
-            if (parts.Length > 2 && int.TryParse(parts[2], out var s)) result.Scope = (SyncScope)s;
-            if (parts.Length > 3 && int.TryParse(parts[3], out var o)) result.OverwriteMode = (OverwriteMode)o;
-            if (parts.Length > 4) result.CategoryIds = parts[4].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => int.Parse(x)).ToList();
-            if (parts.Length > 5 && DateTime.TryParse(parts[5], out var dt)) result.LastSyncUtc = dt;
-            return result;
+            try
+            {
+                using (var stream = File.OpenRead(path))
+                {
+                    var serializer = new DataContractJsonSerializer(typeof(MappingSettingsSnapshot));
+                    var snapshot = serializer.ReadObject(stream) as MappingSettingsSnapshot;
+                    return snapshot?.ToMappingSettings() ?? new MappingSettings();
+                }
+            }
+            catch
+            {
+                return new MappingSettings();
+            }
+        }
+
+        [DataContract]
+        private class MappingSettingsSnapshot
+        {
+            [DataMember] public string InstanceSource { get; set; }
+            [DataMember] public string TypeSource { get; set; }
+            [DataMember] public string InstanceTarget { get; set; }
+            [DataMember] public string TypeTarget { get; set; }
+            [DataMember] public int Scope { get; set; }
+            [DataMember] public int OverwriteMode { get; set; }
+            [DataMember] public List<int> CategoryIds { get; set; }
+            [DataMember] public string LastSyncUtc { get; set; }
+
+            public static MappingSettingsSnapshot From(MappingSettings settings)
+            {
+                return new MappingSettingsSnapshot
+                {
+                    InstanceSource = settings.InstanceSource ?? "IFCName",
+                    TypeSource = settings.TypeSource ?? "IFCName [Type]",
+                    InstanceTarget = settings.InstanceTarget ?? string.Empty,
+                    TypeTarget = settings.TypeTarget ?? string.Empty,
+                    Scope = (int)settings.Scope,
+                    OverwriteMode = (int)settings.OverwriteMode,
+                    CategoryIds = settings.CategoryIds ?? new List<int>(),
+                    LastSyncUtc = settings.LastSyncUtc?.ToString("o") ?? string.Empty
+                };
+            }
+
+            public MappingSettings ToMappingSettings()
+            {
+                return new MappingSettings
+                {
+                    InstanceSource = string.IsNullOrWhiteSpace(InstanceSource) ? "IFCName" : InstanceSource,
+                    TypeSource = string.IsNullOrWhiteSpace(TypeSource) ? "IFCName [Type]" : TypeSource,
+                    InstanceTarget = InstanceTarget,
+                    TypeTarget = TypeTarget,
+                    Scope = (SyncScope)Scope,
+                    OverwriteMode = (OverwriteMode)OverwriteMode,
+                    CategoryIds = CategoryIds ?? new List<int>(),
+                    LastSyncUtc = DateTime.TryParse(LastSyncUtc, out var dt) ? dt : (DateTime?)null
+                };
+            }
         }
     }
 }

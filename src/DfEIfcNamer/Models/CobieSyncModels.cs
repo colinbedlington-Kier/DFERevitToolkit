@@ -26,8 +26,8 @@ namespace DfEIfcNamer.Models
 
     public class MappingSettings
     {
-        public string InstanceSource { get; set; } = "IfcName";
-        public string TypeSource { get; set; } = "IfcName[Type]";
+        public string InstanceSource { get; set; } = "IFCName";
+        public string TypeSource { get; set; } = "IFCName [Type]";
         public string InstanceTarget { get; set; } = "COBie.Component.Name";
         public string TypeTarget { get; set; } = "COBie.Type.Name";
         public SyncScope Scope { get; set; } = SyncScope.EntireModel;

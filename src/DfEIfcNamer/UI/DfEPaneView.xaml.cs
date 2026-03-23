@@ -3,11 +3,11 @@ using System.Windows;
 
 namespace DfEIfcNamer.UI
 {
-    public partial class DfEPaneView : Window
+    public partial class DfEFloatingWindow : Window
     {
         private bool _allowClose;
 
-        public DfEPaneView()
+        public DfEFloatingWindow()
         {
             InitializeComponent();
         }
