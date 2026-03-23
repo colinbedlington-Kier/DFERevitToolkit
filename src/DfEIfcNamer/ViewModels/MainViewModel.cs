@@ -38,6 +38,9 @@ namespace DfEIfcNamer.ViewModels
             SaveAndApplyCommand = new RelayCommand(_ => SaveAndApply());
             ExitCommand = new RelayCommand(_ => RequestClose?.Invoke());
 
+            SetupStatus = "Ready.";
+            CoverageStatus = "No setup diagnostics available.";
+
             RefreshMetadata();
             LoadMapping();
         }
@@ -58,25 +61,81 @@ namespace DfEIfcNamer.ViewModels
         public string TypeTarget { get; set; }
 
         private string _selectedScope;
-        public string SelectedScope { get => _selectedScope; set { _selectedScope = value; RaisePropertyChanged(); } }
+        public string SelectedScope
+        {
+            get => _selectedScope;
+            set
+            {
+                _selectedScope = value;
+                RaisePropertyChanged();
+            }
+        }
 
         private string _selectedOverwrite;
-        public string SelectedOverwrite { get => _selectedOverwrite; set { _selectedOverwrite = value; RaisePropertyChanged(); } }
+        public string SelectedOverwrite
+        {
+            get => _selectedOverwrite;
+            set
+            {
+                _selectedOverwrite = value;
+                RaisePropertyChanged();
+            }
+        }
 
-        private string _setupStatus = "Not checked";
-        public string SetupStatus { get => _setupStatus; set { _setupStatus = value; RaisePropertyChanged(); } }
+        private string _setupStatus = "Ready.";
+        public string SetupStatus
+        {
+            get => _setupStatus;
+            set
+            {
+                _setupStatus = value;
+                RaisePropertyChanged();
+            }
+        }
 
-        private string _coverageStatus = "Unknown";
-        public string CoverageStatus { get => _coverageStatus; set { _coverageStatus = value; RaisePropertyChanged(); } }
+        private string _coverageStatus = "No setup diagnostics available.";
+        public string CoverageStatus
+        {
+            get => _coverageStatus;
+            set
+            {
+                _coverageStatus = value;
+                RaisePropertyChanged();
+            }
+        }
 
         private string _documentStatus = "Document: n/a";
-        public string DocumentStatus { get => _documentStatus; set { _documentStatus = value; RaisePropertyChanged(); } }
+        public string DocumentStatus
+        {
+            get => _documentStatus;
+            set
+            {
+                _documentStatus = value;
+                RaisePropertyChanged();
+            }
+        }
 
         private string _mappingLoadedStatus = "Mapping loaded: no";
-        public string MappingLoadedStatus { get => _mappingLoadedStatus; set { _mappingLoadedStatus = value; RaisePropertyChanged(); } }
+        public string MappingLoadedStatus
+        {
+            get => _mappingLoadedStatus;
+            set
+            {
+                _mappingLoadedStatus = value;
+                RaisePropertyChanged();
+            }
+        }
 
         private string _lastSyncStatus = "Last sync: never";
-        public string LastSyncStatus { get => _lastSyncStatus; set { _lastSyncStatus = value; RaisePropertyChanged(); } }
+        public string LastSyncStatus
+        {
+            get => _lastSyncStatus;
+            set
+            {
+                _lastSyncStatus = value;
+                RaisePropertyChanged();
+            }
+        }
 
         public ICommand CheckParametersCommand { get; }
         public ICommand AssignParametersCommand { get; }
@@ -111,9 +170,15 @@ namespace DfEIfcNamer.ViewModels
                 Callback = r =>
                 {
                     Categories.Clear();
+
                     foreach (var category in r.Categories ?? Enumerable.Empty<Category>())
                     {
-                        Categories.Add(new CategorySelectionItem { Id = category.Id.Value, Name = category.Name, IsSelected = true });
+                        Categories.Add(new CategorySelectionItem
+                        {
+                            Id = category.Id.Value,
+                            Name = category.Name,
+                            IsSelected = true
+                        });
                     }
                 }
             });
@@ -121,45 +186,74 @@ namespace DfEIfcNamer.ViewModels
 
         private void CheckParameters()
         {
+            SetupStatus = "Checking parameters...";
+            Logs.Add("Checking shared parameter bindings...");
+
             _dispatcher.Raise(new RevitRequest
             {
                 Id = RevitRequestId.CheckSetup,
-                CategoryIds = Categories.Where(c => c.IsSelected).Select(c => new ElementId(c.Id)).ToList(),
+                CategoryIds = GetSelectedCategoryIds(),
                 Callback = r =>
                 {
-                    if (r.Error != null)
+                    if (!string.IsNullOrWhiteSpace(r.Error))
                     {
-                        SetupStatus = "⚠ " + SanitizeSetupMessage(r.Error, "Setup check failed.");
+                        SetupStatus = "⚠ " + NormalizeSetupMessage(r.Error, "Setup check failed.");
+                        CoverageStatus = "No setup diagnostics available.";
+                        ParameterResults.Clear();
+                        Logs.Add("Check failed: " + r.Error);
                         return;
                     }
 
                     var status = r.SetupStatus;
-                    SetupStatus = SanitizeSetupMessage(status?.Message, "Setup check failed.");
-                    CoverageStatus = BuildCoverageStatus(status);
-                    UpdateParameterResults(status);
-                    Logs.Add($"Check: {status?.Message ?? "No setup status returned."}");
+                    ApplySetupStatus(status, isAssignRun: false);
+                    Logs.Add("Check complete.");
                 }
             });
         }
 
         private void AssignParameters()
         {
+            SetupStatus = "Assigning parameters...";
+            Logs.Add("Assigning shared parameters to the model...");
+
             _dispatcher.Raise(new RevitRequest
             {
                 Id = RevitRequestId.AssignParameters,
-                CategoryIds = Categories.Where(c => c.IsSelected).Select(c => new ElementId(c.Id)).ToList(),
+                CategoryIds = GetSelectedCategoryIds(),
                 Callback = r =>
                 {
-                    if (r.Error != null)
+                    if (!string.IsNullOrWhiteSpace(r.Error))
                     {
-                        SetupStatus = "⚠ " + SanitizeSetupMessage(r.Error, "Assign parameters failed.");
+                        SetupStatus = "⚠ " + NormalizeSetupMessage(r.Error, "Assign parameters failed.");
+                        Logs.Add("Assign failed: " + r.Error);
                         return;
                     }
 
-                    SetupStatus = SanitizeSetupMessage(r.SetupStatus?.Message, "Assign parameters completed.");
-                    CoverageStatus = BuildCoverageStatus(r.SetupStatus);
-                    UpdateParameterResults(r.SetupStatus);
-                    Logs.Add("Assign Parameters executed.");
+                    var status = r.SetupStatus;
+                    ApplySetupStatus(status, isAssignRun: true);
+
+                    if (status == null)
+                    {
+                        SetupStatus = "⚠ Assign parameters failed.";
+                        Logs.Add("Assign returned no setup status.");
+                        return;
+                    }
+
+                    if (status.ParameterResults != null && status.ParameterResults.Any(x => x.InsertSucceeded || x.ReInsertSucceeded))
+                    {
+                        SetupStatus = "Parameters assigned.";
+                        Logs.Add("Assign complete: one or more parameters were inserted/reinserted.");
+                    }
+                    else if (status.ParameterResults != null && status.ParameterResults.Any())
+                    {
+                        SetupStatus = "⚠ Assign parameters failed.";
+                        Logs.Add("Assign completed but no parameter bindings were inserted.");
+                    }
+                    else
+                    {
+                        SetupStatus = "⚠ Assign parameters failed.";
+                        Logs.Add("Assign returned no parameter results.");
+                    }
                 }
             });
         }
@@ -172,14 +266,18 @@ namespace DfEIfcNamer.ViewModels
                 Callback = r =>
                 {
                     var settings = r.Settings ?? new MappingSettings();
+
                     InstanceSource = string.IsNullOrWhiteSpace(settings.InstanceSource) ? "IFCName" : settings.InstanceSource;
                     TypeSource = string.IsNullOrWhiteSpace(settings.TypeSource) ? "IFCName [Type]" : settings.TypeSource;
                     InstanceTarget = string.IsNullOrWhiteSpace(settings.InstanceTarget) ? "COBie.Component.Name" : settings.InstanceTarget;
                     TypeTarget = string.IsNullOrWhiteSpace(settings.TypeTarget) ? "COBie.Type.Name" : settings.TypeTarget;
                     SelectedScope = settings.Scope == SyncScope.ActiveView ? ScopeOptions[1] : ScopeOptions[0];
                     SelectedOverwrite = settings.OverwriteMode == OverwriteMode.OverwriteAlways ? OverwriteOptions[1] : OverwriteOptions[0];
-                    LastSyncStatus = settings.LastSyncUtc.HasValue ? "Last sync: " + settings.LastSyncUtc.Value.ToLocalTime().ToString("g") : "Last sync: never";
+                    LastSyncStatus = settings.LastSyncUtc.HasValue
+                        ? "Last sync: " + settings.LastSyncUtc.Value.ToLocalTime().ToString("g")
+                        : "Last sync: never";
                     MappingLoadedStatus = "Mapping loaded: yes";
+
                     RaisePropertyChanged(nameof(InstanceSource));
                     RaisePropertyChanged(nameof(TypeSource));
                     RaisePropertyChanged(nameof(InstanceTarget));
@@ -191,6 +289,7 @@ namespace DfEIfcNamer.ViewModels
         private void SaveAndApply()
         {
             Logs.Clear();
+
             var settings = new MappingSettings
             {
                 InstanceSource = InstanceSource,
@@ -198,7 +297,9 @@ namespace DfEIfcNamer.ViewModels
                 InstanceTarget = InstanceTarget,
                 TypeTarget = TypeTarget,
                 Scope = SelectedScope == "Active View" ? SyncScope.ActiveView : SyncScope.EntireModel,
-                OverwriteMode = SelectedOverwrite == "Overwrite always" ? OverwriteMode.OverwriteAlways : OverwriteMode.BlankOnly,
+                OverwriteMode = SelectedOverwrite == "Overwrite always"
+                    ? OverwriteMode.OverwriteAlways
+                    : OverwriteMode.BlankOnly,
                 CategoryIds = Categories.Where(c => c.IsSelected).Select(c => c.Id).ToList()
             };
 
@@ -208,22 +309,56 @@ namespace DfEIfcNamer.ViewModels
                 Settings = settings,
                 Callback = r =>
                 {
-                    if (r.Error != null)
+                    if (!string.IsNullOrWhiteSpace(r.Error))
                     {
                         Logs.Add("Error: " + r.Error);
                         return;
                     }
 
                     LastSyncStatus = "Last sync: " + DateTime.Now.ToString("g");
-                    var summary = $"Instances Updated/Skipped/Failed: {r.SyncResult.InstancesUpdated}/{r.SyncResult.InstancesSkipped}/{r.SyncResult.InstancesFailed}; " +
-                                  $"Types Updated/Skipped/Failed: {r.SyncResult.TypesUpdated}/{r.SyncResult.TypesSkipped}/{r.SyncResult.TypesFailed}";
+
+                    var syncResult = r.SyncResult;
+                    if (syncResult == null)
+                    {
+                        Logs.Add("Sync completed, but no sync result was returned.");
+                        return;
+                    }
+
+                    var summary =
+                        $"Instances Updated/Skipped/Failed: {syncResult.InstancesUpdated}/{syncResult.InstancesSkipped}/{syncResult.InstancesFailed}; " +
+                        $"Types Updated/Skipped/Failed: {syncResult.TypesUpdated}/{syncResult.TypesSkipped}/{syncResult.TypesFailed}";
+
                     Logs.Add(summary);
-                    foreach (var log in r.SyncResult.Logs)
+
+                    foreach (var log in syncResult.Logs ?? Enumerable.Empty<SyncLogEntry>())
                     {
                         Logs.Add($"{log.Severity}: {log.Message}");
                     }
                 }
             });
+        }
+
+        private System.Collections.Generic.IList<ElementId> GetSelectedCategoryIds()
+        {
+            return Categories
+                .Where(c => c.IsSelected)
+                .Select(c => new ElementId(c.Id))
+                .ToList();
+        }
+
+        private void ApplySetupStatus(SetupStatus status, bool isAssignRun)
+        {
+            CoverageStatus = BuildCoverageStatus(status);
+            UpdateParameterResults(status);
+
+            if (status == null)
+            {
+                SetupStatus = isAssignRun ? "⚠ Assign parameters failed." : "⚠ Setup check failed.";
+                return;
+            }
+
+            var defaultMessage = isAssignRun ? "Assign parameters completed." : "Setup check completed.";
+            SetupStatus = NormalizeSetupMessage(status.Message, defaultMessage);
         }
 
         private static string BuildCoverageStatus(SetupStatus status)
@@ -233,37 +368,30 @@ namespace DfEIfcNamer.ViewModels
                 return "No setup diagnostics available.";
             }
 
-            var sharedParamsExists = status.SharedParameterFileFound;
-            var entityJsonExists = status.EntityMappingLoaded;
-            var classificationJsonExists = status.ClassificationSlotsLoaded;
-            var addinFolder = status.ResolvedAddinFolder;
-            var sharedParameterPath = status.SharedParameterFilePath;
-            var includedCategories = status.IncludedCategoriesCount;
-            var skippedCategories = status.SkippedUnsupportedCategoriesCount;
-            var bindingFailures = status.FailedBindingInsertCount;
-
             return
-                $"Shared parameter file loaded: {(sharedParamsExists ? "yes" : "no")}\n" +
-                $"Entity mapping JSON loaded: {(entityJsonExists ? "yes" : "no")}\n" +
-                $"Classification slots JSON loaded: {(classificationJsonExists ? "yes" : "no")}\n" +
-                $"Resolved add-in folder: {addinFolder}\n" +
-                $"Shared parameter path: {sharedParameterPath}\n" +
-                $"Included categories: {includedCategories}\n" +
-                $"Skipped unsupported categories: {skippedCategories}\n" +
-                $"Binding failures: {bindingFailures}";
+                $"Shared parameter file loaded: {ToYesNo(status.SharedParameterFileFound)}\n" +
+                $"Entity mapping JSON loaded: {ToYesNo(status.EntityMappingLoaded)}\n" +
+                $"Classification slots JSON loaded: {ToYesNo(status.ClassificationSlotsLoaded)}\n" +
+                $"Resolved add-in folder: {status.ResolvedAddinFolder}\n" +
+                $"Shared parameter path: {status.SharedParameterFilePath}\n" +
+                $"Included categories: {status.IncludedCategoriesCount}\n" +
+                $"Skipped unsupported categories: {status.SkippedUnsupportedCategoriesCount}\n" +
+                $"Binding failures: {status.FailedBindingInsertCount}";
         }
 
-        private static string YesNo(bool value) => value ? "yes" : "no";
+        private static string ToYesNo(bool value)
+        {
+            return value ? "yes" : "no";
+        }
 
-        private static string SanitizeSetupMessage(string message, string fallback)
+        private static string NormalizeSetupMessage(string message, string fallback)
         {
             if (string.IsNullOrWhiteSpace(message))
             {
                 return fallback;
             }
 
-            const string legacyText = "Error in readParamDatabase";
-            if (message.IndexOf(legacyText, StringComparison.OrdinalIgnoreCase) >= 0)
+            if (message.IndexOf("readParamDatabase", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 return fallback;
             }
@@ -274,6 +402,7 @@ namespace DfEIfcNamer.ViewModels
         private void UpdateParameterResults(SetupStatus status)
         {
             ParameterResults.Clear();
+
             foreach (var result in status?.ParameterResults ?? Enumerable.Empty<ParameterBindingResult>())
             {
                 ParameterResults.Add(result);
