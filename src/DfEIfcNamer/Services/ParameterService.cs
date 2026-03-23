@@ -92,6 +92,7 @@ namespace DfEIfcNamer.Services
             var selectedIds = categories == null
                 ? null
                 : new HashSet<long>(categories.Where(c => c != null).Select(c => c.Id.Value));
+
             var allModelCategories = doc.Settings.Categories.Cast<Category>().ToList();
             var modelCategories = BuildValidModelCategoryList(allModelCategories, selectedIds, summary);
 
@@ -138,9 +139,13 @@ namespace DfEIfcNamer.Services
             PopulateSummaryCounts(summary);
         }
 
-        private static IList<Category> BuildValidModelCategoryList(IEnumerable<Category> categories, HashSet<long> selectedIds, ParameterBindingSummary summary)
+        private static IList<Category> BuildValidModelCategoryList(
+            IEnumerable<Category> categories,
+            HashSet<long> selectedIds,
+            ParameterBindingSummary summary)
         {
             var result = new List<Category>();
+
             foreach (var category in categories.Where(c => c != null).OrderBy(c => c.Name))
             {
                 if (selectedIds != null && selectedIds.Count > 0 && !selectedIds.Contains(category.Id.Value))
@@ -165,6 +170,7 @@ namespace DfEIfcNamer.Services
         private static CategorySet BuildCategorySet(Document doc, IEnumerable<Category> categories, ParameterBindingSummary summary)
         {
             var set = doc.Application.Create.NewCategorySet();
+
             foreach (var category in categories)
             {
                 try
@@ -181,7 +187,13 @@ namespace DfEIfcNamer.Services
             return set;
         }
 
-        private static void BindParameterSet(Document doc, DefinitionGroup group, IEnumerable<ParameterSpec> specs, CategorySet categorySet, ForgeTypeId groupTypeId, ParameterBindingSummary summary)
+        private static void BindParameterSet(
+            Document doc,
+            DefinitionGroup group,
+            IEnumerable<ParameterSpec> specs,
+            CategorySet categorySet,
+            ForgeTypeId groupTypeId,
+            ParameterBindingSummary summary)
         {
             foreach (var spec in specs)
             {
@@ -196,6 +208,7 @@ namespace DfEIfcNamer.Services
                 {
                     var definition = ResolveDefinition(group, spec, out var resolvedName);
                     result.FoundInSharedParameterFile = definition != null;
+
                     if (definition == null)
                     {
                         result.Notes = "Missing definition in shared parameter file: " + spec.DisplayName;
@@ -250,15 +263,22 @@ namespace DfEIfcNamer.Services
             return null;
         }
 
-        private static void VerifyBindings(Document doc, IList<Category> modelCategories, Category projectInfoCategory, ParameterBindingSummary summary)
+        private static void VerifyBindings(
+            Document doc,
+            IList<Category> modelCategories,
+            Category projectInfoCategory,
+            ParameterBindingSummary summary)
         {
             var bindingMap = GetBindingMap(doc);
+
             foreach (var result in summary.ParameterResults)
             {
                 var spec = AllSpecs().First(s => s.DisplayName == result.Name);
+
                 string definitionName;
                 ElementBinding binding;
                 var bound = ResolveBinding(bindingMap, spec, out definitionName, out binding);
+
                 if (!bound || binding == null)
                 {
                     result.FinalBoundState = false;
@@ -266,7 +286,10 @@ namespace DfEIfcNamer.Services
                     continue;
                 }
 
-                var kindOk = spec.ExpectedBindingType == "type" ? binding is TypeBinding : binding is InstanceBinding;
+                var kindOk = spec.ExpectedBindingType == "type"
+                    ? binding is TypeBinding
+                    : binding is InstanceBinding;
+
                 bool categoriesOk;
                 if (spec.ExpectedBindingType == "project info")
                 {
@@ -276,43 +299,13 @@ namespace DfEIfcNamer.Services
                 {
                     categoriesOk = BindingCoversCategories(binding, modelCategories);
                 }
-            }
-
-            binding = null;
-            definitionName = null;
-            return false;
-        }
 
                 result.FinalBoundState = kindOk && categoriesOk;
+
                 if (!kindOk)
                 {
                     result.Notes = AppendNote(result.Notes, "Binding kind mismatch for definition '" + definitionName + "'.");
                 }
-            }
-
-            return false;
-        }
-
-        private static bool EnsureSharedParameterFileConfigured(Autodesk.Revit.ApplicationServices.Application app, string sharedPath)
-        {
-            if (!File.Exists(sharedPath))
-            {
-                return false;
-            }
-
-            app.SharedParametersFilename = sharedPath;
-            return true;
-        }
-
-        private static string AppendError(string existing, string next)
-        {
-            if (string.IsNullOrWhiteSpace(existing))
-            {
-                return next;
-            }
-
-            return existing + " | " + next;
-        }
 
                 if (!categoriesOk)
                 {
@@ -326,6 +319,7 @@ namespace DfEIfcNamer.Services
             var map = new Dictionary<string, ElementBinding>(StringComparer.OrdinalIgnoreCase);
             var iterator = doc.ParameterBindings.ForwardIterator();
             iterator.Reset();
+
             while (iterator.MoveNext())
             {
                 var definition = iterator.Key as Definition;
@@ -341,7 +335,11 @@ namespace DfEIfcNamer.Services
             return map;
         }
 
-        private static bool ResolveBinding(Dictionary<string, ElementBinding> map, ParameterSpec spec, out string definitionName, out ElementBinding binding)
+        private static bool ResolveBinding(
+            Dictionary<string, ElementBinding> map,
+            ParameterSpec spec,
+            out string definitionName,
+            out ElementBinding binding)
         {
             foreach (var candidate in spec.LookupNames)
             {
@@ -359,7 +357,12 @@ namespace DfEIfcNamer.Services
 
         private static bool BindingCoversCategories(ElementBinding binding, IList<Category> expectedCategories)
         {
-            var actual = new HashSet<long>(binding.Categories.Cast<Category>().Where(c => c != null).Select(c => c.Id.Value));
+            var actual = new HashSet<long>(
+                binding.Categories
+                    .Cast<Category>()
+                    .Where(c => c != null)
+                    .Select(c => c.Id.Value));
+
             return expectedCategories.All(c => actual.Contains(c.Id.Value));
         }
 
@@ -463,9 +466,14 @@ namespace DfEIfcNamer.Services
             public string ExpectedBindingType { get; }
             public IList<string> LookupNames { get; }
 
-            public static ParameterSpec Instance(string displayName, params string[] lookupNames) => new ParameterSpec(displayName, "instance", lookupNames);
-            public static ParameterSpec Type(string displayName, params string[] lookupNames) => new ParameterSpec(displayName, "type", lookupNames);
-            public static ParameterSpec ProjectInfo(string displayName, params string[] lookupNames) => new ParameterSpec(displayName, "project info", lookupNames);
+            public static ParameterSpec Instance(string displayName, params string[] lookupNames)
+                => new ParameterSpec(displayName, "instance", lookupNames);
+
+            public static ParameterSpec Type(string displayName, params string[] lookupNames)
+                => new ParameterSpec(displayName, "type", lookupNames);
+
+            public static ParameterSpec ProjectInfo(string displayName, params string[] lookupNames)
+                => new ParameterSpec(displayName, "project info", lookupNames);
         }
     }
 }
