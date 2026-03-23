@@ -265,6 +265,28 @@ namespace DfEIfcNamer.Services
                     result.Notes = AppendNote(result.Notes, "Definition not bound in document.");
                     continue;
                 }
+            }
+
+            binding = null;
+            definitionName = null;
+            return false;
+        }
+
+        private static bool BindingCoversCategories(ElementBinding binding, IList<Category> expectedCategories)
+        {
+            var actual = new HashSet<long>(binding.Categories.Cast<Category>().Where(c => c != null).Select(c => c.Id.Value));
+            return expectedCategories.All(c => actual.Contains(c.Id.Value));
+        }
+
+        private static bool BindingContainsCategory(ElementBinding binding, Category expectedCategory)
+        {
+            if (expectedCategory == null)
+            {
+                return false;
+            }
+
+            return binding.Categories.Cast<Category>().Any(c => c != null && c.Id.Value == expectedCategory.Id.Value);
+        }
 
                 var kindOk = spec.ExpectedBindingType == "type" ? binding is TypeBinding : binding is InstanceBinding;
                 var categoriesOk = spec.ExpectedBindingType == "project info"
