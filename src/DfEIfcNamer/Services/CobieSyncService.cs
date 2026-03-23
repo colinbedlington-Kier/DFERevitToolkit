@@ -37,10 +37,6 @@ namespace DfEIfcNamer.Services
                 status.InstanceParameterBound = IsParameterBound(doc, new[] { "IFCName", "IfcName" }, false, categories);
                 status.TypeParameterBound = IsParameterBound(doc, new[] { "IFCName [Type]", "IFCName[Type]", "IfcName[Type]" }, true, categories);
 
-                status.Message = status.SharedParameterFileFound && status.EntityMappingLoaded && status.ClassificationSlotsLoaded
-                    ? "Setup check complete."
-                    : "Setup check completed with missing resources.";
-
                 var errors = new List<string>();
                 if (!status.SharedParameterFileFound)
                 {
@@ -58,6 +54,11 @@ namespace DfEIfcNamer.Services
                 }
 
                 status.ErrorDetails = string.Join(" | ", errors);
+                var resourcesOk = status.SharedParameterFileFound &&
+                                  status.EntityMappingLoaded &&
+                                  status.ClassificationSlotsLoaded &&
+                                  string.IsNullOrWhiteSpace(status.ErrorDetails);
+                status.Message = resourcesOk ? "Resource diagnostics: OK" : "Resource diagnostics: Error";
             }
             catch (Exception ex)
             {
@@ -77,11 +78,26 @@ namespace DfEIfcNamer.Services
             status.IncludedCategoriesCount = bindingSummary.IncludedCategoriesCount;
             status.SkippedUnsupportedCategoriesCount = bindingSummary.SkippedUnsupportedCategoriesCount;
             status.IncludedCategoryNames = bindingSummary.IncludedCategoryNames.ToList();
+            status.ParametersRequestedCount = bindingSummary.ParametersRequestedCount;
+            status.ParametersFoundInSharedFileCount = bindingSummary.ParametersFoundInSharedFileCount;
+            status.InsertSucceededCount = bindingSummary.InsertSucceededCount;
+            status.ReInsertSucceededCount = bindingSummary.ReInsertSucceededCount;
+            status.VerifiedBoundCount = bindingSummary.VerifiedBoundCount;
+            status.VerificationFailedCount = bindingSummary.VerificationFailedCount;
+            status.ParameterResults = bindingSummary.ParameterResults.ToList();
 
             if (!string.IsNullOrWhiteSpace(bindingSummary.ErrorMessage))
             {
                 status.Message = "Assign parameters completed with errors.";
                 status.ErrorDetails = bindingSummary.ErrorMessage;
+            }
+            else if (status.VerificationFailedCount == 0 && status.ParametersRequestedCount > 0)
+            {
+                status.Message = "Assign Parameters completed successfully.";
+            }
+            else
+            {
+                status.Message = "Assign Parameters completed with issues. See parameter results below.";
             }
 
             return status;

@@ -31,9 +31,28 @@ namespace DfEIfcNamer.Models
         public int IncludedCategoriesCount { get; set; }
         public int SkippedUnsupportedCategoriesCount { get; set; }
         public int FailedBindingInsertCount { get; set; }
+        public int ParametersRequestedCount { get; set; }
+        public int ParametersFoundInSharedFileCount { get; set; }
+        public int InsertSucceededCount { get; set; }
+        public int ReInsertSucceededCount { get; set; }
+        public int VerifiedBoundCount { get; set; }
+        public int VerificationFailedCount { get; set; }
         public IList<string> IncludedCategoryNames { get; set; } = new List<string>();
+        public IList<ParameterBindingResult> ParameterResults { get; set; } = new List<ParameterBindingResult>();
         public string Message { get; set; }
         public string ErrorDetails { get; set; }
+    }
+
+    public class ParameterBindingResult
+    {
+        public string Name { get; set; }
+        public string ExpectedBindingType { get; set; }
+        public bool FoundInSharedParameterFile { get; set; }
+        public bool InsertSucceeded { get; set; }
+        public bool ReInsertSucceeded { get; set; }
+        public bool FinalBoundState { get; set; }
+        public string BindingAction { get; set; }
+        public string Notes { get; set; }
     }
 
     public class MappingSettings
