@@ -129,12 +129,12 @@ namespace DfEIfcNamer.ViewModels
                 {
                     if (r.Error != null)
                     {
-                        SetupStatus = "⚠ " + r.Error;
+                        SetupStatus = "⚠ " + SanitizeSetupMessage(r.Error, "Setup check failed.");
                         return;
                     }
 
                     var status = r.SetupStatus;
-                    SetupStatus = status?.Message ?? "Setup check failed.";
+                    SetupStatus = SanitizeSetupMessage(status?.Message, "Setup check failed.");
                     CoverageStatus = BuildCoverageStatus(status);
                     UpdateParameterResults(status);
                     Logs.Add($"Check: {status?.Message ?? "No setup status returned."}");
@@ -152,11 +152,11 @@ namespace DfEIfcNamer.ViewModels
                 {
                     if (r.Error != null)
                     {
-                        SetupStatus = "⚠ " + r.Error;
+                        SetupStatus = "⚠ " + SanitizeSetupMessage(r.Error, "Assign parameters failed.");
                         return;
                     }
 
-                    SetupStatus = r.SetupStatus?.Message ?? "Assign parameters completed.";
+                    SetupStatus = SanitizeSetupMessage(r.SetupStatus?.Message, "Assign parameters completed.");
                     CoverageStatus = BuildCoverageStatus(r.SetupStatus);
                     UpdateParameterResults(r.SetupStatus);
                     Logs.Add("Assign Parameters executed.");
@@ -254,6 +254,22 @@ namespace DfEIfcNamer.ViewModels
         }
 
         private static string YesNo(bool value) => value ? "yes" : "no";
+
+        private static string SanitizeSetupMessage(string message, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return fallback;
+            }
+
+            const string legacyText = "Error in readParamDatabase";
+            if (message.IndexOf(legacyText, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return fallback;
+            }
+
+            return message;
+        }
 
         private void UpdateParameterResults(SetupStatus status)
         {

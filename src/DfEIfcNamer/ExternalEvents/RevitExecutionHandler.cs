@@ -40,7 +40,12 @@ namespace DfEIfcNamer.ExternalEvents
                         response.SetupStatus = _cobieSyncService.CheckSetup(doc, _request.CategoryIds);
                         break;
                     case RevitRequestId.AssignParameters:
-                        response.SetupStatus = _cobieSyncService.AssignParameters(doc, _request.CategoryIds);
+                        using (var tx = new Transaction(doc, "DfE IFC Namer - Assign Parameters"))
+                        {
+                            tx.Start();
+                            response.SetupStatus = _cobieSyncService.AssignParameters(doc, _request.CategoryIds);
+                            tx.Commit();
+                        }
                         break;
                     case RevitRequestId.GetAvailableParameters:
                         response.InstanceParameters = _cobieSyncService.GetStringParameters(doc, false);
