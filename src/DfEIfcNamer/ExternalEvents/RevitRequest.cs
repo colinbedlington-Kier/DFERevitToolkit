@@ -13,7 +13,14 @@ namespace DfEIfcNamer.ExternalEvents
         SaveMapping,
         ApplySync,
         GetAvailableParameters,
-        GetCategories
+        GetCategories,
+        RunFullDiagnostics,
+        CheckSharedParameterFile,
+        CheckExpectedDefinitions,
+        CheckCategoryBindings,
+        TestSingleParameterBind,
+        GetDiagnosticsState,
+        ClearDiagnostics
     }
 
     public class RevitRequest
@@ -21,6 +28,7 @@ namespace DfEIfcNamer.ExternalEvents
         public RevitRequestId Id { get; set; }
         public MappingSettings Settings { get; set; }
         public IList<ElementId> CategoryIds { get; set; }
+        public string ParameterName { get; set; }
         public Action<RevitResponse> Callback { get; set; }
     }
 
@@ -32,6 +40,7 @@ namespace DfEIfcNamer.ExternalEvents
         public IList<ProjectParameterOption> InstanceParameters { get; set; }
         public IList<ProjectParameterOption> TypeParameters { get; set; }
         public IList<Category> Categories { get; set; }
+        public DiagnosticsState DiagnosticsState { get; set; }
         public string Error { get; set; }
     }
 }

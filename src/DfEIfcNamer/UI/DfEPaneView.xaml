@@ -98,6 +98,35 @@
                     <Button Content="Exit" Width="100" Command="{Binding ExitCommand}" HorizontalAlignment="Left"/>
                 </StackPanel>
             </TabItem>
+            <TabItem Header="Diagnostics">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <WrapPanel>
+                        <Button Content="Run Full Diagnostics" Margin="0,0,8,8" Click="RunFullDiagnostics_Click"/>
+                        <Button Content="Check Shared Parameter File" Margin="0,0,8,8" Click="CheckSharedParameterFile_Click"/>
+                        <Button Content="Check Expected Definitions" Margin="0,0,8,8" Click="CheckExpectedDefinitions_Click"/>
+                        <Button Content="Check Category Bindings" Margin="0,0,8,8" Click="CheckCategoryBindings_Click"/>
+                        <Button Content="Test Single Parameter Bind" Margin="0,0,8,8" Click="TestSingleParameterBind_Click"/>
+                        <Button Content="Clear Log" Margin="0,0,8,8" Click="ClearLog_Click"/>
+                        <Button Content="Copy Log" Margin="0,0,8,8" Click="CopyLog_Click"/>
+                        <Button Content="Export TXT" Margin="0,0,8,8" Click="ExportTxt_Click"/>
+                        <Button Content="Export JSON" Margin="0,0,8,8" Click="ExportJson_Click"/>
+                    </WrapPanel>
+                    <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,8">
+                        <TextBlock x:Name="DiagSharedPathText" Text="Shared parameter path: n/a" Margin="0,0,8,4" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="DiagFileExistsText" Text="File exists?: n/a" Margin="0,0,8,4"/>
+                        <TextBlock x:Name="DiagOpenSpfText" Text="OpenSharedParameterFile success?: n/a" Margin="0,0,8,4"/>
+                        <TextBlock x:Name="DiagGroupCountText" Text="Group count: 0" Margin="0,0,8,4"/>
+                        <TextBlock x:Name="DiagDefinitionCountText" Text="Definition count: 0" Margin="0,0,8,4"/>
+                        <TextBlock x:Name="DiagLastRunText" Text="Last run: n/a" Margin="0,0,8,4"/>
+                    </UniformGrid>
+                    <TextBox x:Name="DiagnosticsLogTextBox" Grid.Row="2" IsReadOnly="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AcceptsReturn="True" FontFamily="Consolas"/>
+                </Grid>
+            </TabItem>
         </TabControl>
     </DockPanel>
 </Window>
