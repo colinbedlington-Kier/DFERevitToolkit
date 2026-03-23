@@ -36,13 +36,13 @@
     <EmbeddedResource Include="Resources\*.json" />
 
     <!-- Also copy to output so deployment can use on-disk fallbacks -->
-    <None Include="Resources\ifc2x3_entity_predefinedtypes.json">
+    <None Update="Resources\ifc2x3_entity_predefinedtypes.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="Resources\classification_slots.json">
+    <None Update="Resources\classification_slots.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="Resources\DfE_IfcNamer_SharedParameters.txt">
+    <None Update="Resources\DfE_IfcNamer_SharedParameters.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
