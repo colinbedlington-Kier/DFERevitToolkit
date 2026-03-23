@@ -229,11 +229,6 @@ namespace DfEIfcNamer.Services
                     result.BindingAction = "Exception";
                     summary.FailedBindingInsertCount++;
                 }
-            }
-
-            resolvedName = null;
-            return null;
-        }
 
                 summary.ParameterResults.Add(result);
             }
@@ -261,13 +256,37 @@ namespace DfEIfcNamer.Services
             foreach (var result in summary.ParameterResults)
             {
                 var spec = AllSpecs().First(s => s.DisplayName == result.Name);
-                var bound = ResolveBinding(bindingMap, spec, out var definitionName, out var binding);
+                string definitionName;
+                ElementBinding binding;
+                var bound = ResolveBinding(bindingMap, spec, out definitionName, out binding);
                 if (!bound || binding == null)
                 {
                     result.FinalBoundState = false;
                     result.Notes = AppendNote(result.Notes, "Definition not bound in document.");
                     continue;
                 }
+            }
+
+            binding = null;
+            definitionName = null;
+            return false;
+        }
+
+        private static bool BindingCoversCategories(ElementBinding binding, IList<Category> expectedCategories)
+        {
+            var actual = new HashSet<long>(binding.Categories.Cast<Category>().Where(c => c != null).Select(c => c.Id.Value));
+            return expectedCategories.All(c => actual.Contains(c.Id.Value));
+        }
+
+        private static bool BindingContainsCategory(ElementBinding binding, Category expectedCategory)
+        {
+            if (expectedCategory == null)
+            {
+                return false;
+            }
+
+            return binding.Categories.Cast<Category>().Any(c => c != null && c.Id.Value == expectedCategory.Id.Value);
+        }
 
                 var kindOk = spec.ExpectedBindingType == "type" ? binding is TypeBinding : binding is InstanceBinding;
                 var categoriesOk = spec.ExpectedBindingType == "project info"
@@ -294,12 +313,14 @@ namespace DfEIfcNamer.Services
             iterator.Reset();
             while (iterator.MoveNext())
             {
-                if (!(iterator.Key is Definition def) || !(iterator.Current is ElementBinding binding))
+                var definition = iterator.Key as Definition;
+                var binding = iterator.Current as ElementBinding;
+                if (definition == null || binding == null)
                 {
                     continue;
                 }
 
-                map[def.Name] = binding;
+                map[definition.Name] = binding;
             }
 
             return map;
@@ -309,9 +330,11 @@ namespace DfEIfcNamer.Services
         {
             foreach (var candidate in spec.LookupNames)
             {
-                if (map.TryGetValue(candidate, out binding))
+                ElementBinding resolvedBinding;
+                if (map.TryGetValue(candidate, out resolvedBinding))
                 {
                     definitionName = candidate;
+                    binding = resolvedBinding;
                     return true;
                 }
             }
