@@ -233,28 +233,24 @@ namespace DfEIfcNamer.ViewModels
                 return "No setup diagnostics available.";
             }
 
-            var errorDetails = string.IsNullOrWhiteSpace(status.ErrorDetails) ? "None" : status.ErrorDetails;
+            var sharedParamsExists = status.SharedParameterFileFound;
+            var entityJsonExists = status.EntityMappingLoaded;
+            var classificationJsonExists = status.ClassificationSlotsLoaded;
+            var addinFolder = status.ResolvedAddinFolder;
+            var sharedParameterPath = status.SharedParameterFilePath;
+            var includedCategories = status.IncludedCategoriesCount;
+            var skippedCategories = status.SkippedUnsupportedCategoriesCount;
+            var bindingFailures = status.FailedBindingInsertCount;
+
             return
-                $"Resource diagnostics: {(status.SharedParameterFileFound && status.EntityMappingLoaded && status.ClassificationSlotsLoaded && errorDetails == \"None\" ? "OK" : "Error")}\n" +
-                $"Resolved add-in folder: {status.ResolvedAddinFolder}\n" +
-                $"Shared parameter file path: {status.SharedParameterFilePath}\n" +
-                $"Shared parameter file exists: {YesNo(status.SharedParameterFileFound)}\n" +
-                $"Entity mapping JSON path: {status.EntityMappingJsonPath}\n" +
-                $"Entity mapping JSON exists: {YesNo(status.EntityMappingFileExists)}\n" +
-                $"Entity mapping JSON loaded: {YesNo(status.EntityMappingLoaded)}\n" +
-                $"Classification slots JSON path: {status.ClassificationSlotsJsonPath}\n" +
-                $"Classification slots JSON exists: {YesNo(status.ClassificationSlotsFileExists)}\n" +
-                $"Classification slots JSON loaded: {YesNo(status.ClassificationSlotsLoaded)}\n" +
-                $"Included categories: {status.IncludedCategoriesCount}\n" +
-                $"Skipped unsupported categories: {status.SkippedUnsupportedCategoriesCount}\n" +
-                $"Binding failures: {status.FailedBindingInsertCount}\n" +
-                $"Parameters requested: {status.ParametersRequestedCount}\n" +
-                $"Parameters found in SP file: {status.ParametersFoundInSharedFileCount}\n" +
-                $"Insert succeeded: {status.InsertSucceededCount}\n" +
-                $"ReInsert succeeded: {status.ReInsertSucceededCount}\n" +
-                $"Verified bound: {status.VerifiedBoundCount}\n" +
-                $"Verification failed: {status.VerificationFailedCount}\n" +
-                $"Error details: {errorDetails}";
+                $"Shared parameter file loaded: {(sharedParamsExists ? "yes" : "no")}\n" +
+                $"Entity mapping JSON loaded: {(entityJsonExists ? "yes" : "no")}\n" +
+                $"Classification slots JSON loaded: {(classificationJsonExists ? "yes" : "no")}\n" +
+                $"Resolved add-in folder: {addinFolder}\n" +
+                $"Shared parameter path: {sharedParameterPath}\n" +
+                $"Included categories: {includedCategories}\n" +
+                $"Skipped unsupported categories: {skippedCategories}\n" +
+                $"Binding failures: {bindingFailures}";
         }
 
         private static string YesNo(bool value) => value ? "yes" : "no";
