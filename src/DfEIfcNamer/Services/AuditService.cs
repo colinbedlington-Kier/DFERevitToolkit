@@ -17,7 +17,7 @@ namespace DfEIfcNamer.Services
             {
                 var type = doc.GetElement(e.GetTypeId());
                 rows.Add(string.Join(",",
-                    e.Id.IntegerValue,
+                    e.Id.Value,
                     Escape(e.Category?.Name),
                     "Instance",
                     Escape(e.LookupParameter("IfcName")?.AsString()),
