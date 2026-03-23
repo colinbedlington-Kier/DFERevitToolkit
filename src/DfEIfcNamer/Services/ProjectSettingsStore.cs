@@ -30,7 +30,7 @@ namespace DfEIfcNamer.Services
                         TypeTarget = entity.Get<string>("TypeTarget"),
                         Scope = (SyncScope)entity.Get<int>("Scope"),
                         OverwriteMode = (OverwriteMode)entity.Get<int>("OverwriteMode"),
-                        CategoryIds = entity.Get<IList<int>>("CategoryIds").ToList(),
+                        CategoryIds = entity.Get<IList<long>>("CategoryIds").ToList(),
                         LastSyncUtc = entity.Get<string>("LastSyncUtc") is string v && DateTime.TryParse(v, out var dt) ? dt : (DateTime?)null
                     };
                 }
@@ -55,7 +55,7 @@ namespace DfEIfcNamer.Services
                 entity.Set("TypeTarget", settings.TypeTarget ?? string.Empty);
                 entity.Set("Scope", (int)settings.Scope);
                 entity.Set("OverwriteMode", (int)settings.OverwriteMode);
-                entity.Set("CategoryIds", settings.CategoryIds ?? new System.Collections.Generic.List<int>());
+                entity.Set("CategoryIds", settings.CategoryIds ?? new List<long>());
                 entity.Set("LastSyncUtc", settings.LastSyncUtc?.ToString("o") ?? string.Empty);
                 doc.ProjectInformation.SetEntity(entity);
                 return;
@@ -82,7 +82,7 @@ namespace DfEIfcNamer.Services
             builder.AddSimpleField("TypeTarget", typeof(string));
             builder.AddSimpleField("Scope", typeof(int));
             builder.AddSimpleField("OverwriteMode", typeof(int));
-            builder.AddArrayField("CategoryIds", typeof(int));
+            builder.AddArrayField("CategoryIds", typeof(long));
             builder.AddSimpleField("LastSyncUtc", typeof(string));
             builder.SetReadAccessLevel(AccessLevel.Public);
             builder.SetWriteAccessLevel(AccessLevel.Public);
@@ -141,7 +141,7 @@ namespace DfEIfcNamer.Services
             [DataMember] public string TypeTarget { get; set; }
             [DataMember] public int Scope { get; set; }
             [DataMember] public int OverwriteMode { get; set; }
-            [DataMember] public List<int> CategoryIds { get; set; }
+            [DataMember] public List<long> CategoryIds { get; set; }
             [DataMember] public string LastSyncUtc { get; set; }
 
             public static MappingSettingsSnapshot From(MappingSettings settings)
@@ -154,7 +154,7 @@ namespace DfEIfcNamer.Services
                     TypeTarget = settings.TypeTarget ?? string.Empty,
                     Scope = (int)settings.Scope,
                     OverwriteMode = (int)settings.OverwriteMode,
-                    CategoryIds = settings.CategoryIds ?? new List<int>(),
+                    CategoryIds = settings.CategoryIds ?? new List<long>(),
                     LastSyncUtc = settings.LastSyncUtc?.ToString("o") ?? string.Empty
                 };
             }
@@ -169,7 +169,7 @@ namespace DfEIfcNamer.Services
                     TypeTarget = TypeTarget,
                     Scope = (SyncScope)Scope,
                     OverwriteMode = (OverwriteMode)OverwriteMode,
-                    CategoryIds = CategoryIds ?? new List<int>(),
+                    CategoryIds = CategoryIds ?? new List<long>(),
                     LastSyncUtc = DateTime.TryParse(LastSyncUtc, out var dt) ? dt : (DateTime?)null
                 };
             }
