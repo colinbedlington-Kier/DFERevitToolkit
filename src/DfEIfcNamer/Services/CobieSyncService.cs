@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using Autodesk.Revit.DB;
 using DfEIfcNamer.Models;
 
@@ -32,16 +34,25 @@ namespace DfEIfcNamer.Services
 
         private readonly ParameterService _parameterService;
         private readonly ResourceJsonService _resourceJsonService;
+        private readonly DiagnosticsCollectorService _diagnostics;
+        private readonly SharedParameterFileInspector _fileInspector;
 
-        public CobieSyncService(ParameterService parameterService, ResourceJsonService resourceJsonService)
+        public CobieSyncService(
+            ParameterService parameterService,
+            ResourceJsonService resourceJsonService,
+            DiagnosticsCollectorService diagnostics,
+            SharedParameterFileInspector fileInspector)
         {
             _parameterService = parameterService;
             _resourceJsonService = resourceJsonService;
+            _diagnostics = diagnostics;
+            _fileInspector = fileInspector;
         }
 
         public SetupStatus CheckSetup(Document doc, IList<ElementId> selectedCategoryIds = null)
         {
             var status = BuildStatusSkeleton();
+            _diagnostics.AddInfo("CheckSetup", "Setup diagnostics started.");
 
             try
             {
@@ -85,18 +96,22 @@ namespace DfEIfcNamer.Services
                                   status.ClassificationSlotsLoaded &&
                                   string.IsNullOrWhiteSpace(status.ErrorDetails);
                 status.Message = resourcesOk ? "Resource diagnostics: OK" : "Resource diagnostics: Error";
+                UpdateDiagnosticsSummaryFromSetup(doc, status);
             }
             catch (Exception ex)
             {
                 status.Message = "Setup check failed.";
                 status.ErrorDetails = ex.Message;
+                _diagnostics.AddError("CheckSetup", "Setup diagnostics failed.", ex);
             }
 
+            _diagnostics.AddInfo("CheckSetup", "Setup diagnostics completed.");
             return status;
         }
 
         public SetupStatus AssignParameters(Document doc, IList<ElementId> selectedCategoryIds = null)
         {
+            _diagnostics.AddInfo("AssignParameters", "Assign parameters request started.");
             var selectedCategories = selectedCategoryIds?.Select(id => Category.GetCategory(doc, id)).Where(c => c != null).ToList();
             var bindingSummary = _parameterService.EnsureIfcNameParameters(doc, selectedCategories);
             var status = CheckSetup(doc, selectedCategoryIds);
@@ -128,7 +143,330 @@ namespace DfEIfcNamer.Services
                 status.ErrorDetails = string.Empty;
             }
 
+            UpdateDiagnosticsSummaryFromSetup(doc, status);
+            _diagnostics.AddInfo("AssignParameters", "Assign parameters request completed.", new
+            {
+                status.ParametersRequestedCount,
+                status.InsertSucceededCount,
+                status.ReInsertSucceededCount,
+                status.VerifiedBoundCount
+            });
             return status;
+        }
+
+        public DiagnosticsState GetDiagnosticsState()
+        {
+            return _diagnostics.Snapshot();
+        }
+
+        public void ClearDiagnostics()
+        {
+            _diagnostics.Clear();
+        }
+
+        public void RunFullDiagnostics(Document doc, IList<ElementId> selectedCategoryIds = null)
+        {
+            _diagnostics.Clear();
+            _diagnostics.AddInfo("FullDiagnostics", "Started full diagnostics run.");
+            LogEnvironmentAndSharedParameterPath(doc);
+            RunSharedParameterFileInspection(doc);
+            RunExpectedDefinitionDiagnostics(doc);
+            RunCategoryBindingDiagnostics(doc, selectedCategoryIds);
+            RunBindingAttemptDiagnostics(doc, selectedCategoryIds);
+            RunSingleParameterBindDiagnostic(doc, selectedCategoryIds, "IfcName");
+            var setup = CheckSetup(doc, selectedCategoryIds);
+            UpdateDiagnosticsSummaryFromSetup(doc, setup);
+            _diagnostics.AddInfo("FullDiagnostics", "Completed full diagnostics run.");
+        }
+
+        public void RunSharedParameterFileInspection(Document doc)
+        {
+            LogEnvironmentAndSharedParameterPath(doc);
+            var sharedPath = _parameterService.ResolveSharedParameterFilePath();
+            var inspect = _fileInspector.Inspect(sharedPath);
+            _diagnostics.Summary.SharedParameterPath = sharedPath;
+            _diagnostics.Summary.SharedParameterFileExists = inspect.FileExists;
+            _diagnostics.AddInfo("SharedParameterFile", "Inspecting shared parameter file.", new
+            {
+                path = sharedPath,
+                inspect.FileExists,
+                inspect.IsReadable,
+                inspect.FileLength,
+                inspect.LastWriteTimeUtc
+            });
+
+            if (!inspect.FileExists)
+            {
+                _diagnostics.AddError("SharedParameterFile", "Shared parameter file does not exist.");
+                return;
+            }
+
+            if (!inspect.IsReadable)
+            {
+                _diagnostics.AddError("SharedParameterFile", "Shared parameter file is not readable.", null, new { inspect.ReadError });
+                return;
+            }
+
+            _diagnostics.AddDebug("SharedParameterFile", "First lines preview.", new { inspect.PreviewLines });
+            _diagnostics.AddInfo("SharedParameterFile", "Manual parse complete.", new
+            {
+                GroupCount = inspect.Groups.Count,
+                DefinitionCount = inspect.Parameters.Count,
+                Groups = inspect.Groups.Select(g => g.Name).ToList()
+            });
+
+            var before = doc.Application.SharedParametersFilename;
+            doc.Application.SharedParametersFilename = sharedPath;
+            var after = doc.Application.SharedParametersFilename;
+            _diagnostics.AddInfo("SharedParameterFile", "Set Application.SharedParametersFilename.", new { Before = before, After = after });
+            var file = doc.Application.OpenSharedParameterFile();
+            _diagnostics.Summary.OpenSharedParameterFileSucceeded = file != null;
+
+            if (file == null)
+            {
+                _diagnostics.AddError("SharedParameterFile", "OpenSharedParameterFile returned null.");
+                return;
+            }
+
+            var groups = file.Groups.Cast<DefinitionGroup>().ToList();
+            _diagnostics.Summary.GroupCount = groups.Count;
+            if (groups.Count == 0)
+            {
+                _diagnostics.AddError("SharedParameterFile", "OpenSharedParameterFile succeeded but no groups were found.");
+            }
+
+            var definitionCount = 0;
+            foreach (var group in groups)
+            {
+                var definitions = group.Definitions.Cast<Definition>().ToList();
+                definitionCount += definitions.Count;
+                _diagnostics.AddInfo("SharedParameterFile", "Group discovered.", new
+                {
+                    Group = group.Name,
+                    DefinitionCount = definitions.Count,
+                    Definitions = definitions.Select(d => new
+                    {
+                        d.Name,
+                        DataType = d.GetDataType().TypeId,
+                        Guid = (d as ExternalDefinition)?.GUID.ToString()
+                    }).ToList()
+                });
+            }
+
+            _diagnostics.Summary.DefinitionCount = definitionCount;
+            _diagnostics.AddInfo("SharedParameterFile", "Revit API parse complete.", new { GroupCount = groups.Count, DefinitionCount = definitionCount });
+        }
+
+        public void RunExpectedDefinitionDiagnostics(Document doc)
+        {
+            var sharedPath = _parameterService.ResolveSharedParameterFilePath();
+            doc.Application.SharedParametersFilename = sharedPath;
+            var file = doc.Application.OpenSharedParameterFile();
+            if (file == null)
+            {
+                _diagnostics.AddError("ExpectedDefinitions", "OpenSharedParameterFile returned null before definition lookup.");
+                return;
+            }
+
+            var groups = file.Groups.Cast<DefinitionGroup>().ToList();
+            var byGroup = groups.ToDictionary(
+                g => g.Name,
+                g => g.Definitions.Cast<Definition>().ToList(),
+                StringComparer.OrdinalIgnoreCase);
+            var allDefinitionNames = byGroup.SelectMany(k => k.Value.Select(d => d.Name)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            _diagnostics.Summary.TotalExpectedParameters = ExpectedParameters.Length;
+
+            foreach (var expected in ExpectedParameters)
+            {
+                var inAnyGroup = allDefinitionNames.Any(n => expected.LookupNames.Any(l => string.Equals(l, n, StringComparison.OrdinalIgnoreCase)));
+                var exact = groups
+                    .Select(g => new
+                    {
+                        Group = g.Name,
+                        Definition = expected.LookupNames
+                            .Select(candidate => g.Definitions.get_Item(candidate) as Definition)
+                            .FirstOrDefault(def => def != null)
+                    })
+                    .FirstOrDefault(x => x.Definition != null);
+                var ciMatches = allDefinitionNames.Where(n => expected.LookupNames.Any(l => string.Equals(l, n, StringComparison.OrdinalIgnoreCase))).ToList();
+                var trimmedMatches = allDefinitionNames.Where(n => expected.LookupNames.Any(l => string.Equals(l?.Trim(), n?.Trim(), StringComparison.OrdinalIgnoreCase))).ToList();
+
+                if (exact != null)
+                {
+                    _diagnostics.Summary.TotalParametersFound++;
+                    _diagnostics.Summary.LastSuccessfulParameterFound = expected.DisplayName;
+                }
+
+                _diagnostics.AddInfo("ExpectedDefinitions", "Expected parameter lookup.", new
+                {
+                    Parameter = expected.DisplayName,
+                    BindingScope = expected.ExpectedBindingType,
+                    ExpectedGroup = "DfE IFC Namer",
+                    GroupExists = byGroup.ContainsKey("DfE IFC Namer"),
+                    DefinitionExistsInExpectedGroup = byGroup.ContainsKey("DfE IFC Namer") &&
+                                                      expected.LookupNames.Any(n => byGroup["DfE IFC Namer"].Any(d => string.Equals(d.Name, n, StringComparison.Ordinal))),
+                    DefinitionExistsAnyGroup = inAnyGroup,
+                    FoundGroup = exact?.Group,
+                    NearMatchesCaseInsensitive = ciMatches,
+                    NearMatchesTrimmed = trimmedMatches
+                });
+            }
+        }
+
+        public void RunCategoryBindingDiagnostics(Document doc, IList<ElementId> selectedCategoryIds = null)
+        {
+            var selectedIds = selectedCategoryIds == null || selectedCategoryIds.Count == 0
+                ? null
+                : new HashSet<long>(selectedCategoryIds.Select(x => x.Value));
+            var included = new List<string>();
+            var skipped = new List<object>();
+            foreach (var category in doc.Settings.Categories.Cast<Category>().Where(c => c != null).OrderBy(c => c.Name))
+            {
+                if (selectedIds != null && !selectedIds.Contains(category.Id.Value))
+                {
+                    skipped.Add(new { category.Name, Reason = "Not selected in UI." });
+                    continue;
+                }
+
+                if (!category.AllowsBoundParameters)
+                {
+                    skipped.Add(new { category.Name, Reason = "AllowsBoundParameters=false." });
+                    continue;
+                }
+
+                if (category.IsTagCategory)
+                {
+                    skipped.Add(new { category.Name, Reason = "Tag category." });
+                    continue;
+                }
+
+                if (category.CategoryType == CategoryType.Internal)
+                {
+                    skipped.Add(new { category.Name, Reason = "Internal category." });
+                    continue;
+                }
+
+                included.Add(category.Name);
+            }
+
+            _diagnostics.AddInfo("CategoryResolution", "Category resolution complete.", new
+            {
+                RequestedCount = selectedIds?.Count ?? doc.Settings.Categories.Size,
+                Included = included,
+                Skipped = skipped,
+                FinalCategorySetCount = included.Count
+            });
+        }
+
+        public void RunSingleParameterBindDiagnostic(Document doc, IList<ElementId> selectedCategoryIds, string parameterName)
+        {
+            var spec = ExpectedParameters.FirstOrDefault(x => string.Equals(x.DisplayName, parameterName, StringComparison.OrdinalIgnoreCase))
+                       ?? ExpectedParameters.First();
+            _diagnostics.AddInfo("SingleParameterBind", "Testing single parameter binding.", new { RequestedParameter = parameterName, TargetParameter = spec.DisplayName });
+            try
+            {
+                var sharedPath = _parameterService.ResolveSharedParameterFilePath();
+                doc.Application.SharedParametersFilename = sharedPath;
+                var file = doc.Application.OpenSharedParameterFile();
+                if (file == null)
+                {
+                    _diagnostics.AddError("SingleParameterBind", "OpenSharedParameterFile returned null.");
+                    return;
+                }
+
+                var definition = file.Groups
+                    .Cast<DefinitionGroup>()
+                    .SelectMany(g => spec.LookupNames.Select(n => g.Definitions.get_Item(n) as ExternalDefinition).Where(d => d != null))
+                    .FirstOrDefault();
+                if (definition == null)
+                {
+                    _diagnostics.AddError("SingleParameterBind", "Definition could not be resolved for single parameter test.", null, new { spec.DisplayName, Candidates = spec.LookupNames });
+                    return;
+                }
+
+                var categories = GetModelCategories(doc, selectedCategoryIds, out _).Take(5).ToList();
+                var catSet = doc.Application.Create.NewCategorySet();
+                foreach (var category in categories)
+                {
+                    catSet.Insert(category);
+                }
+
+                var binding = spec.ExpectedBindingType == "type"
+                    ? (Binding)doc.Application.Create.NewTypeBinding(catSet)
+                    : doc.Application.Create.NewInstanceBinding(catSet);
+                var insert = doc.ParameterBindings.Insert(definition, binding, GroupTypeId.Ifc);
+                var reinsert = insert ? false : doc.ParameterBindings.ReInsert(definition, binding, GroupTypeId.Ifc);
+                var map = GetBindingMap(doc);
+                var verified = spec.LookupNames.Any(name => map.ContainsKey(name));
+
+                if (insert || reinsert)
+                {
+                    _diagnostics.Summary.LastSuccessfulBinding = spec.DisplayName;
+                    _diagnostics.Summary.TotalInsertSuccesses += insert ? 1 : 0;
+                    _diagnostics.Summary.TotalReInsertSuccesses += reinsert ? 1 : 0;
+                }
+                else
+                {
+                    _diagnostics.Summary.LastFailedBinding = spec.DisplayName;
+                }
+
+                if (verified)
+                {
+                    _diagnostics.Summary.TotalVerified += 1;
+                }
+
+                _diagnostics.AddInfo("SingleParameterBind", "Single parameter test complete.", new
+                {
+                    Parameter = spec.DisplayName,
+                    BindingKind = spec.ExpectedBindingType,
+                    Categories = categories.Select(c => c.Name).ToList(),
+                    CategoryCount = categories.Count,
+                    Insert = insert,
+                    ReInsert = reinsert,
+                    ExistingBindingPresent = !insert,
+                    Verified = verified
+                });
+            }
+            catch (Exception ex)
+            {
+                _diagnostics.Summary.LastFailedBinding = spec.DisplayName;
+                _diagnostics.AddError("SingleParameterBind", "Single parameter bind test failed.", ex);
+            }
+        }
+
+        private void RunBindingAttemptDiagnostics(Document doc, IList<ElementId> selectedCategoryIds)
+        {
+            var selectedCategories = selectedCategoryIds?.Select(id => Category.GetCategory(doc, id)).Where(c => c != null).ToList();
+            try
+            {
+                using (var tx = new Transaction(doc, "DfE IFC Namer - Diagnostics Binding Attempt"))
+                {
+                    tx.Start();
+                    var bindingSummary = _parameterService.EnsureIfcNameParameters(doc, selectedCategories);
+                    foreach (var result in bindingSummary.ParameterResults)
+                    {
+                        _diagnostics.AddInfo("BindingAttempt", "Binding attempt result.", new
+                        {
+                            result.Name,
+                            BindingType = result.ExpectedBindingType,
+                            CategoryCount = bindingSummary.IncludedCategoriesCount,
+                            ParameterGroup = result.ExpectedBindingType == "project info" ? GroupTypeId.Data.TypeId : GroupTypeId.Ifc.TypeId,
+                            result.InsertSucceeded,
+                            result.ReInsertSucceeded,
+                            ExistingBindingWasPresent = !result.InsertSucceeded,
+                            result.FinalBoundState,
+                            result.Notes
+                        });
+                    }
+
+                    tx.RollBack();
+                    _diagnostics.AddDebug("BindingAttempt", "Diagnostic binding transaction rolled back.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _diagnostics.AddError("BindingAttempt", "Binding attempt diagnostics failed.", ex);
+            }
         }
 
         private static string BuildParameterSummaryMessage(SetupStatus status, bool sharedParameterLoaded, bool hasErrors)
@@ -181,6 +519,15 @@ namespace DfEIfcNamer.Services
 
         public SyncResult ApplySync(Document doc, MappingSettings settings)
         {
+            _diagnostics.AddInfo("Sync", "COBie sync started.", new
+            {
+                settings.Scope,
+                settings.OverwriteMode,
+                settings.InstanceSource,
+                settings.InstanceTarget,
+                settings.TypeSource,
+                settings.TypeTarget
+            });
             var result = new SyncResult();
             var categories = GetModelCategories(doc, settings.CategoryIds?.Select(id => new ElementId(id)).ToList());
             var instanceCollector = settings.Scope == SyncScope.ActiveView
@@ -203,6 +550,15 @@ namespace DfEIfcNamer.Services
                 group.Assimilate();
             }
 
+            _diagnostics.AddInfo("Sync", "COBie sync completed.", new
+            {
+                result.InstancesUpdated,
+                result.InstancesSkipped,
+                result.InstancesFailed,
+                result.TypesUpdated,
+                result.TypesSkipped,
+                result.TypesFailed
+            });
             return result;
         }
 
@@ -215,6 +571,74 @@ namespace DfEIfcNamer.Services
                 EntityMappingJsonPath = _resourceJsonService.ResolveEntityMappingPath(),
                 ClassificationSlotsJsonPath = _resourceJsonService.ResolveClassificationSlotsPath()
             };
+        }
+
+        private void LogEnvironmentAndSharedParameterPath(Document doc)
+        {
+            try
+            {
+                var assemblyPath = Assembly.GetExecutingAssembly().Location;
+                var addinFolder = _parameterService.ResolveAddinFolder();
+                var sharedPath = _parameterService.ResolveSharedParameterFilePath();
+                var resourcesFolder = Path.Combine(addinFolder, "Resources");
+                var exists = File.Exists(sharedPath);
+                var fileInfo = exists ? new FileInfo(sharedPath) : null;
+                _diagnostics.AddInfo("Environment", "Resolved runtime paths.", new
+                {
+                    AssemblyLocation = assemblyPath,
+                    AddinFolder = addinFolder,
+                    ResourcesFolder = resourcesFolder,
+                    SharedParameterFilePath = sharedPath,
+                    FileExists = exists,
+                    FileLengthBytes = fileInfo?.Length ?? 0L,
+                    LastModifiedUtc = fileInfo?.LastWriteTimeUtc
+                });
+
+                _diagnostics.Summary.DocumentTitle = doc.Title;
+                _diagnostics.Summary.ActiveProjectName = doc.ProjectInformation?.Name;
+                _diagnostics.Summary.RevitVersion = doc.Application.VersionNumber;
+                _diagnostics.Summary.SharedParameterPath = sharedPath;
+            }
+            catch (Exception ex)
+            {
+                _diagnostics.AddError("Environment", "Failed while collecting environment diagnostics.", ex);
+            }
+        }
+
+        private void UpdateDiagnosticsSummaryFromSetup(Document doc, SetupStatus status)
+        {
+            _diagnostics.Summary.DocumentTitle = doc.Title;
+            _diagnostics.Summary.ActiveProjectName = doc.ProjectInformation?.Name;
+            _diagnostics.Summary.RevitVersion = doc.Application.VersionNumber;
+            _diagnostics.Summary.SharedParameterPath = status?.SharedParameterFilePath;
+            _diagnostics.Summary.SharedParameterFileExists = status?.SharedParameterFileFound ?? false;
+            _diagnostics.Summary.LastRunTimeUtc = DateTime.UtcNow;
+            _diagnostics.Summary.TotalExpectedParameters = status?.ParametersRequestedCount ?? 0;
+            _diagnostics.Summary.TotalParametersFound = status?.ParametersFoundInSharedFileCount ?? 0;
+            _diagnostics.Summary.TotalInsertSuccesses = status?.InsertSucceededCount ?? 0;
+            _diagnostics.Summary.TotalReInsertSuccesses = status?.ReInsertSucceededCount ?? 0;
+            _diagnostics.Summary.TotalVerified = status?.VerifiedBoundCount ?? 0;
+            _diagnostics.Summary.LastSuccessfulBinding = status?.ParameterResults?.FirstOrDefault(r => r.InsertSucceeded || r.ReInsertSucceeded)?.Name;
+            _diagnostics.Summary.LastFailedBinding = status?.ParameterResults?.FirstOrDefault(r => !r.FinalBoundState)?.Name;
+            _diagnostics.Summary.LastSuccessfulParameterFound = status?.ParameterResults?.FirstOrDefault(r => r.FoundInSharedParameterFile)?.Name;
+            if (!string.IsNullOrWhiteSpace(status?.ErrorDetails))
+            {
+                _diagnostics.Summary.LastErrorSummary = status.ErrorDetails;
+            }
+
+            _diagnostics.AddInfo("SetupSummary", "Setup/assign summary captured.", new
+            {
+                status?.SharedParameterFileFound,
+                status?.IncludedCategoriesCount,
+                status?.SkippedUnsupportedCategoriesCount,
+                status?.ParametersRequestedCount,
+                status?.ParametersFoundInSharedFileCount,
+                status?.InsertSucceededCount,
+                status?.ReInsertSucceededCount,
+                status?.VerifiedBoundCount,
+                status?.VerificationFailedCount,
+                status?.ErrorDetails
+            });
         }
 
         private static bool TryLoad<T>(Func<IList<T>> loader, out string error)
