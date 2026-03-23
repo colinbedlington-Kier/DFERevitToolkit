@@ -118,17 +118,12 @@ namespace DfEIfcNamer.Services
 
                 var modelCategorySet = BuildCategorySet(doc, modelCategories, summary);
 
-                using (var tg = new TransactionGroup(doc, "DfE IFC Bootstrap Parameters"))
+                RunBindingInTransaction(doc, summary, () =>
                 {
-                    tg.Start();
-                    RunBindingInTransaction(doc, summary, transactionStarted =>
-                    {
-                        BindParameterSet(doc, definitionLookup, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary, transactionStarted);
-                        BindParameterSet(doc, definitionLookup, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary, transactionStarted);
-                        BindParameterSet(doc, definitionLookup, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary, transactionStarted);
-                    });
-                    tg.Assimilate();
-                }
+                    BindParameterSet(doc, definitionLookup, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary);
+                    BindParameterSet(doc, definitionLookup, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary);
+                    BindParameterSet(doc, definitionLookup, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary);
+                });
 
                 VerifyBindings(doc, modelCategories, projectInfoCategory, summary);
                 PopulateSummaryCounts(summary);
@@ -219,8 +214,7 @@ namespace DfEIfcNamer.Services
             IEnumerable<ParameterSpec> specs,
             CategorySet categorySet,
             ForgeTypeId groupTypeId,
-            ParameterBindingSummary summary,
-            bool transactionStarted)
+            ParameterBindingSummary summary)
         {
             foreach (var spec in specs)
             {
@@ -235,7 +229,7 @@ namespace DfEIfcNamer.Services
                 {
                     var definition = ResolveDefinition(definitionLookup, spec, out var resolvedName, out var resolvedGroup);
                     result.FoundInSharedParameterFile = definition != null;
-                    result.Notes = $"Requested='{spec.DisplayName}', BindingType='{spec.ExpectedBindingType}', TransactionStarted={transactionStarted}.";
+                    result.Notes = $"Requested='{spec.DisplayName}', BindingType='{spec.ExpectedBindingType}', TransactionStarted=True.";
 
                     if (definition == null)
                     {
@@ -299,38 +293,20 @@ namespace DfEIfcNamer.Services
         private static void RunBindingInTransaction(
             Document doc,
             ParameterBindingSummary summary,
-            Action<bool> operation)
+            Action operation)
         {
             if (doc.IsModifiable)
             {
-                using (var subTx = new SubTransaction(doc))
-                {
-                    subTx.Start();
-                    try
-                    {
-                        operation(true);
-                        subTx.Commit();
-                    }
-                    catch
-                    {
-                        if (subTx.GetStatus() == TransactionStatus.Started)
-                        {
-                            subTx.RollBack();
-                        }
-
-                        throw;
-                    }
-                }
-
+                summary.ErrorMessage = AppendError(summary.ErrorMessage, "Cannot bind parameters inside an active Revit transaction.");
                 return;
             }
 
-            using (var tx = new Transaction(doc, "Bind shared parameters"))
+            using (var tx = new Transaction(doc, "Bind DfE Parameters"))
             {
                 tx.Start();
                 try
                 {
-                    operation(true);
+                    operation();
                     tx.Commit();
                 }
                 catch (Exception ex)
