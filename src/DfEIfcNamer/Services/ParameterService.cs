@@ -229,6 +229,11 @@ namespace DfEIfcNamer.Services
                     result.BindingAction = "Exception";
                     summary.FailedBindingInsertCount++;
                 }
+            }
+
+            resolvedName = null;
+            return null;
+        }
 
                 summary.ParameterResults.Add(result);
             }
