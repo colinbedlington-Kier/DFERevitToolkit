@@ -1,3 +1,4 @@
+using System;
 using Autodesk.Revit.UI;
 
 namespace DfEIfcNamer.ExternalEvents
@@ -9,12 +10,17 @@ namespace DfEIfcNamer.ExternalEvents
 
         public RevitRequestDispatcher(RevitExecutionHandler handler, ExternalEvent externalEvent)
         {
-            _handler = handler;
-            _event = externalEvent;
+            _handler = handler ?? throw new ArgumentNullException(nameof(handler));
+            _event = externalEvent ?? throw new ArgumentNullException(nameof(externalEvent));
         }
 
         public void Raise(RevitRequest request)
         {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
             _handler.SetRequest(request);
             _event.Raise();
         }
