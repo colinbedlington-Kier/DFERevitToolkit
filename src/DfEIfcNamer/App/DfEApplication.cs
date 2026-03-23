@@ -3,6 +3,7 @@ using System.Reflection;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using DfEIfcNamer.Commands;
 using DfEIfcNamer.ExternalEvents;
 using DfEIfcNamer.Services;
 using DfEIfcNamer.UI;
@@ -63,24 +64,13 @@ namespace DfEIfcNamer.App
             }
 
             var path = Assembly.GetExecutingAssembly().Location;
-            var showWindowButton = new PushButtonData("DfEIfcNamer.OpenWindow", AppSettings.RibbonButtonName, path, typeof(OpenMainWindowCommand).FullName);
+            var showWindowButton = new PushButtonData("DfEIfcNamer.OpenWindow", AppSettings.RibbonButtonName, path, typeof(OpenDfEIfcNamerCommand).FullName);
             panel.AddItem(showWindowButton);
         }
 
         public static void ShowMainWindow(UIApplication uiApp)
         {
             WindowManager.ShowOrActivate(uiApp, _viewModel);
-        }
-    }
-
-    [Transaction(TransactionMode.Manual)]
-    [Regeneration(RegenerationOption.Manual)]
-    public class OpenMainWindowCommand : IExternalCommand
-    {
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
-        {
-            DfEApplication.ShowMainWindow(commandData.Application);
-            return Result.Succeeded;
         }
     }
 

@@ -39,7 +39,7 @@ namespace DfEIfcNamer.Services
                         counters[key] = next;
 
                         var ifcTypeName = $"{ifcClass}_{predefined}_Type{next:00}";
-                        SetString(type.LookupParameter("IfcName[Type]"), ifcTypeName);
+                        SetString(LookupFirst(type, "IFCName [Type]", "IFCName[Type]", "IfcName[Type]"), ifcTypeName);
                         SetString(type.LookupParameter("IfcDescription[Type]"), $"{ifcClass} {predefined}");
 
                         SetString(type.LookupParameter("IFC Export As"), $"Ifc{ifcClass}");
@@ -93,7 +93,7 @@ namespace DfEIfcNamer.Services
                         }
 
                         var ifcName = $"{prefix}{sequence}";
-                        SetString(element.LookupParameter("IfcName"), ifcName);
+                        SetString(LookupFirst(element, "IFCName", "IfcName"), ifcName);
                         SetString(element.LookupParameter("IfcDescription"), "TBD");
                     }
 
@@ -113,7 +113,7 @@ namespace DfEIfcNamer.Services
 
             foreach (var type in types)
             {
-                var existing = type.LookupParameter("IfcName[Type]")?.AsString();
+                var existing = LookupFirst(type, "IFCName [Type]", "IFCName[Type]", "IfcName[Type]")?.AsString();
                 if (string.IsNullOrWhiteSpace(existing)) continue;
 
                 var prefix = $"{ifcClass}_{predefined}_Type";
@@ -146,6 +146,20 @@ namespace DfEIfcNamer.Services
             {
                 parameter.Set(value ?? string.Empty);
             }
+        }
+
+        private static Parameter LookupFirst(Element element, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                var parameter = element.LookupParameter(name);
+                if (parameter != null)
+                {
+                    return parameter;
+                }
+            }
+
+            return null;
         }
     }
 }

@@ -25,9 +25,9 @@ namespace DfEIfcNamer.Services
             };
 
             int instanceCoverage;
-            status.InstanceParameterBound = IsParameterBound(doc, "IfcName", false, categories, out instanceCoverage);
+            status.InstanceParameterBound = IsParameterBound(doc, new[] { "IFCName", "IfcName" }, false, categories, out instanceCoverage);
             int typeCoverage;
-            status.TypeParameterBound = IsParameterBound(doc, "IfcName[Type]", true, categories, out typeCoverage);
+            status.TypeParameterBound = IsParameterBound(doc, new[] { "IFCName [Type]", "IFCName[Type]", "IfcName[Type]" }, true, categories, out typeCoverage);
             status.MissingCategoryBindings = Math.Max(categories.Count - instanceCoverage, 0) + Math.Max(categories.Count - typeCoverage, 0);
             status.Message = status.SharedParameterFileFound
                 ? "Setup check complete."
@@ -44,13 +44,33 @@ namespace DfEIfcNamer.Services
 
         public IList<ProjectParameterOption> GetStringParameters(Document doc, bool isType)
         {
-            return new FilteredElementCollector(doc)
-                .OfClass(typeof(ParameterElement))
-                .Cast<ParameterElement>()
-                .Where(p => p.GetDefinition()?.GetDataType() == SpecTypeId.String.Text)
-                .Select(p => p.GetDefinition())
-                .Where(d => d != null)
-                .Select(d => new ProjectParameterOption { Name = d.Name, IsType = isType })
+            var result = new List<ProjectParameterOption>();
+            var iterator = doc.ParameterBindings.ForwardIterator();
+            iterator.Reset();
+            while (iterator.MoveNext())
+            {
+                var definition = iterator.Key as Definition;
+                var binding = iterator.Current as ElementBinding;
+                if (definition == null || binding == null)
+                {
+                    continue;
+                }
+
+                var isMatchingKind = isType ? binding is TypeBinding : binding is InstanceBinding;
+                if (!isMatchingKind)
+                {
+                    continue;
+                }
+
+                if (definition.GetDataType() != SpecTypeId.String.Text)
+                {
+                    continue;
+                }
+
+                result.Add(new ProjectParameterOption { Name = definition.Name, IsType = isType });
+            }
+
+            return result
                 .Distinct(new NameComparer())
                 .OrderBy(x => x.Name)
                 .ToList();
@@ -172,14 +192,15 @@ namespace DfEIfcNamer.Services
             }
         }
 
-        private static bool IsParameterBound(Document doc, string parameterName, bool isType, IList<Category> categories, out int coverage)
+        private static bool IsParameterBound(Document doc, IEnumerable<string> parameterNames, bool isType, IList<Category> categories, out int coverage)
         {
             coverage = 0;
+            var acceptedNames = new HashSet<string>(parameterNames ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
             var iterator = doc.ParameterBindings.ForwardIterator();
             iterator.Reset();
             while (iterator.MoveNext())
             {
-                if (!(iterator.Key is Definition definition) || definition.Name != parameterName)
+                if (!(iterator.Key is Definition definition) || !acceptedNames.Contains(definition.Name))
                 {
                     continue;
                 }

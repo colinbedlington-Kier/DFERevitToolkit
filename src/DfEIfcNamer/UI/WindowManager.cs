@@ -5,13 +5,13 @@ namespace DfEIfcNamer.UI
 {
     public static class WindowManager
     {
-        private static DfEPaneView _window;
+        private static DfEFloatingWindow _window;
 
         public static void ShowOrActivate(UIApplication uiApp, MainViewModel viewModel)
         {
             if (_window == null || !_window.IsLoaded)
             {
-                _window = new DfEPaneView
+                _window = new DfEFloatingWindow
                 {
                     DataContext = viewModel
                 };

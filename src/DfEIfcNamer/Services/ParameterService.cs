@@ -41,7 +41,7 @@ namespace DfEIfcNamer.Services
             {
                 tg.Start();
                 EnsureSharedParameter(doc, group, new[] { "IFCName", "IfcName" }, false, GroupTypeId.Ifc, modelCategories);
-                EnsureSharedParameter(doc, group, new[] { "IFCName[Type]", "IfcName[Type]" }, true, GroupTypeId.Ifc, modelCategories);
+                EnsureSharedParameter(doc, group, new[] { "IFCName [Type]", "IFCName[Type]", "IfcName[Type]" }, true, GroupTypeId.Ifc, modelCategories);
                 tg.Assimilate();
             }
         }
@@ -92,13 +92,16 @@ namespace DfEIfcNamer.Services
                     }
                 }
 
-                if (definition != null)
+                if (definition == null)
                 {
-                    var binding = isType ? (Binding)app.Create.NewTypeBinding(categorySet) : app.Create.NewInstanceBinding(categorySet);
-                    if (!doc.ParameterBindings.Insert(definition, binding, groupTypeId))
-                    {
-                        doc.ParameterBindings.ReInsert(definition, binding, groupTypeId);
-                    }
+                    var options = new ExternalDefinitionCreationOptions(possibleNames.First(), SpecTypeId.String.Text);
+                    definition = group.Definitions.Create(options) as ExternalDefinition;
+                }
+
+                var binding = isType ? (Binding)app.Create.NewTypeBinding(categorySet) : app.Create.NewInstanceBinding(categorySet);
+                if (!doc.ParameterBindings.Insert(definition, binding, groupTypeId))
+                {
+                    doc.ParameterBindings.ReInsert(definition, binding, groupTypeId);
                 }
 
                 tx.Commit();
