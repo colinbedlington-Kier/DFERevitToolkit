@@ -229,6 +229,7 @@ namespace DfEIfcNamer.ViewModels
                 return "No setup diagnostics available.";
             }
 
+            var errorDetails = string.IsNullOrWhiteSpace(status.ErrorDetails) ? "None" : status.ErrorDetails;
             return
                 $"Resolved add-in folder: {status.ResolvedAddinFolder}\n" +
                 $"Shared parameter file path: {status.SharedParameterFilePath}\n" +
@@ -242,7 +243,7 @@ namespace DfEIfcNamer.ViewModels
                 $"Included categories: {status.IncludedCategoriesCount}\n" +
                 $"Skipped unsupported categories: {status.SkippedUnsupportedCategoriesCount}\n" +
                 $"Binding failures: {status.FailedBindingInsertCount}\n" +
-                $"Error details: {string.IsNullOrWhiteSpace(status.ErrorDetails) ? \"None\" : status.ErrorDetails}";
+                $"Error details: {errorDetails}";
         }
 
         private static string YesNo(bool value) => value ? "yes" : "no";
