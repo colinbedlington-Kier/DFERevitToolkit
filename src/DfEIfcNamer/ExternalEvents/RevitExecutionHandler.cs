@@ -38,6 +38,7 @@ namespace DfEIfcNamer.ExternalEvents
                 {
                     case RevitRequestId.CheckSetup:
                         response.SetupStatus = _cobieSyncService.CheckSetup(doc, _request.CategoryIds);
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
                         break;
                     case RevitRequestId.AssignParameters:
                         using (var tx = new Transaction(doc, "DfE IFC Namer - Assign Parameters"))
@@ -46,6 +47,7 @@ namespace DfEIfcNamer.ExternalEvents
                             response.SetupStatus = _cobieSyncService.AssignParameters(doc, _request.CategoryIds);
                             tx.Commit();
                         }
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
                         break;
                     case RevitRequestId.GetAvailableParameters:
                         response.InstanceParameters = _cobieSyncService.GetStringParameters(doc, false);
@@ -53,6 +55,38 @@ namespace DfEIfcNamer.ExternalEvents
                         break;
                     case RevitRequestId.GetCategories:
                         response.Categories = _cobieSyncService.GetModelCategories(doc);
+                        break;
+                    case RevitRequestId.RunFullDiagnostics:
+                        _cobieSyncService.RunFullDiagnostics(doc, _request.CategoryIds);
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
+                        break;
+                    case RevitRequestId.CheckSharedParameterFile:
+                        _cobieSyncService.RunSharedParameterFileInspection(doc);
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
+                        break;
+                    case RevitRequestId.CheckExpectedDefinitions:
+                        _cobieSyncService.RunExpectedDefinitionDiagnostics(doc);
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
+                        break;
+                    case RevitRequestId.CheckCategoryBindings:
+                        _cobieSyncService.RunCategoryBindingDiagnostics(doc, _request.CategoryIds);
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
+                        break;
+                    case RevitRequestId.TestSingleParameterBind:
+                        using (var tx = new Transaction(doc, "DfE IFC Namer - Single Parameter Diagnostic"))
+                        {
+                            tx.Start();
+                            _cobieSyncService.RunSingleParameterBindDiagnostic(doc, _request.CategoryIds, _request.ParameterName);
+                            tx.Commit();
+                        }
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
+                        break;
+                    case RevitRequestId.GetDiagnosticsState:
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
+                        break;
+                    case RevitRequestId.ClearDiagnostics:
+                        _cobieSyncService.ClearDiagnostics();
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
                         break;
                     case RevitRequestId.LoadMapping:
                         response.Settings = _settingsStore.Load(doc) ?? new MappingSettings();
@@ -74,12 +108,13 @@ namespace DfEIfcNamer.ExternalEvents
                             _settingsStore.Save(doc, _request.Settings ?? new MappingSettings());
                             tx.Commit();
                         }
+                        response.DiagnosticsState = _cobieSyncService.GetDiagnosticsState();
                         break;
                 }
             }
             catch (Exception ex)
             {
-                response.Error = ex.Message;
+                response.Error = ex.ToString();
             }
             finally
             {

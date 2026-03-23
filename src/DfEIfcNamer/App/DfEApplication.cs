@@ -19,7 +19,9 @@ namespace DfEIfcNamer.App
         {
             var parameterService = new ParameterService();
             var resourceJsonService = new ResourceJsonService();
-            var cobieSyncService = new CobieSyncService(parameterService, resourceJsonService);
+            var diagnosticsCollector = new DiagnosticsCollectorService();
+            var sharedParameterInspector = new SharedParameterFileInspector();
+            var cobieSyncService = new CobieSyncService(parameterService, resourceJsonService, diagnosticsCollector, sharedParameterInspector);
             var settingsStore = new ProjectSettingsStore();
 
             var executionHandler = new RevitExecutionHandler(cobieSyncService, settingsStore);
