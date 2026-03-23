@@ -276,12 +276,43 @@ namespace DfEIfcNamer.Services
                 {
                     categoriesOk = BindingCoversCategories(binding, modelCategories);
                 }
+            }
+
+            binding = null;
+            definitionName = null;
+            return false;
+        }
 
                 result.FinalBoundState = kindOk && categoriesOk;
                 if (!kindOk)
                 {
                     result.Notes = AppendNote(result.Notes, "Binding kind mismatch for definition '" + definitionName + "'.");
                 }
+            }
+
+            return false;
+        }
+
+        private static bool EnsureSharedParameterFileConfigured(Autodesk.Revit.ApplicationServices.Application app, string sharedPath)
+        {
+            if (!File.Exists(sharedPath))
+            {
+                return false;
+            }
+
+            app.SharedParametersFilename = sharedPath;
+            return true;
+        }
+
+        private static string AppendError(string existing, string next)
+        {
+            if (string.IsNullOrWhiteSpace(existing))
+            {
+                return next;
+            }
+
+            return existing + " | " + next;
+        }
 
                 if (!categoriesOk)
                 {
