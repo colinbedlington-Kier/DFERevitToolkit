@@ -59,25 +59,37 @@ namespace DfEIfcNamer.Services
             return Path.Combine(addinFolder, SharedParameterFileName);
         }
 
-        public ParameterBindingSummary EnsureIfcNameParameters(Document doc, IList<Category> categories)
+        public ParameterBindingSummary EnsureIfcNameParameters(Document doc, IList<Category> categories, bool transactionAlreadyOpen = false)
         {
-            return ExecuteIfcNameParameterBinding(doc, categories, diagnosticOnly: false, rollbackAtEnd: false);
+            return ExecuteIfcNameParameterBinding(doc, categories, diagnosticOnly: false, rollbackAtEnd: false, transactionAlreadyOpen: transactionAlreadyOpen);
         }
 
-        public ParameterBindingSummary DiagnoseIfcNameParameters(Document doc, IList<Category> categories, bool rollbackAtEnd = true)
+        public ParameterBindingSummary DiagnoseIfcNameParameters(
+            Document doc,
+            IList<Category> categories,
+            bool rollbackAtEnd = true,
+            bool transactionAlreadyOpen = false)
         {
-            return ExecuteIfcNameParameterBinding(doc, categories, diagnosticOnly: true, rollbackAtEnd: rollbackAtEnd);
+            return ExecuteIfcNameParameterBinding(
+                doc,
+                categories,
+                diagnosticOnly: true,
+                rollbackAtEnd: rollbackAtEnd,
+                transactionAlreadyOpen: transactionAlreadyOpen);
         }
 
         private ParameterBindingSummary ExecuteIfcNameParameterBinding(
             Document doc,
             IList<Category> categories,
             bool diagnosticOnly,
-            bool rollbackAtEnd)
+            bool rollbackAtEnd,
+            bool transactionAlreadyOpen)
         {
             var summary = new ParameterBindingSummary();
             summary.DiagnosticOnly = diagnosticOnly;
             summary.DiagnosticRollbackUsed = diagnosticOnly && rollbackAtEnd;
+            summary.DocumentModifiableOnEntry = doc.IsModifiable;
+            summary.CallerHadActiveTransaction = transactionAlreadyOpen;
             try
             {
                 var sharedPath = ResolveSharedParameterFilePath();
@@ -139,7 +151,13 @@ namespace DfEIfcNamer.Services
                     BindParameterSet(doc, definitionLookup, InstanceParameters, modelCategorySet, GroupTypeId.Ifc, summary, diagnosticOnly, rollbackAtEnd);
                     BindParameterSet(doc, definitionLookup, TypeParameters, modelCategorySet, GroupTypeId.Ifc, summary, diagnosticOnly, rollbackAtEnd);
                     BindParameterSet(doc, definitionLookup, ProjectInfoParameters, projectInfoCategorySet, GroupTypeId.Data, summary, diagnosticOnly, rollbackAtEnd);
-                }, rollbackAtEnd);
+                }, rollbackAtEnd, transactionAlreadyOpen);
+
+                if (summary.ParameterResults.Count == 0)
+                {
+                    InitializeUnresolvedResults(summary, summary.ErrorMessage ?? "Binding operation did not execute.");
+                    return summary;
+                }
 
                 if (diagnosticOnly && rollbackAtEnd)
                 {
@@ -274,7 +292,7 @@ namespace DfEIfcNamer.Services
                     result.FoundInSharedParameterFile = definition != null;
                     result.ResolvedDefinitionName = resolvedName;
                     result.ResolvedGroup = resolvedGroup;
-                    result.Notes = $"Requested='{spec.DisplayName}', BindingType='{spec.ExpectedBindingType}', TransactionStarted=True.";
+                    result.Notes = $"Requested='{spec.DisplayName}', BindingType='{spec.ExpectedBindingType}'.";
 
                     if (definition == null)
                     {
@@ -348,16 +366,39 @@ namespace DfEIfcNamer.Services
             Document doc,
             ParameterBindingSummary summary,
             Action operation,
-            bool rollbackAtEnd)
+            bool rollbackAtEnd,
+            bool transactionAlreadyOpen)
         {
+            summary.DocumentModifiableOnEntry = doc.IsModifiable;
+            summary.CallerHadActiveTransaction = transactionAlreadyOpen;
+
+            if (transactionAlreadyOpen)
+            {
+                if (!doc.IsModifiable)
+                {
+                    summary.AbortedDueToNestedTransactionProtection = true;
+                    summary.ErrorMessage = AppendError(
+                        summary.ErrorMessage,
+                        "Binding expected an active caller transaction, but document is not modifiable.");
+                    return;
+                }
+
+                summary.MethodStartedTransaction = false;
+                summary.TransactionCommitted = false;
+                operation();
+                return;
+            }
+
             if (doc.IsModifiable)
             {
+                summary.AbortedDueToNestedTransactionProtection = true;
                 summary.ErrorMessage = AppendError(summary.ErrorMessage, "Cannot bind parameters inside an active Revit transaction.");
                 return;
             }
 
             using (var tx = new Transaction(doc, "Bind DfE Parameters"))
             {
+                summary.MethodStartedTransaction = true;
                 tx.Start();
                 try
                 {
@@ -365,10 +406,12 @@ namespace DfEIfcNamer.Services
                     if (rollbackAtEnd)
                     {
                         tx.RollBack();
+                        summary.TransactionCommitted = false;
                     }
                     else
                     {
                         tx.Commit();
+                        summary.TransactionCommitted = true;
                     }
                 }
                 catch (Exception ex)
@@ -667,6 +710,11 @@ namespace DfEIfcNamer.Services
             public int VerificationFailedCount { get; set; }
             public bool DiagnosticOnly { get; set; }
             public bool DiagnosticRollbackUsed { get; set; }
+            public bool DocumentModifiableOnEntry { get; set; }
+            public bool CallerHadActiveTransaction { get; set; }
+            public bool MethodStartedTransaction { get; set; }
+            public bool TransactionCommitted { get; set; }
+            public bool AbortedDueToNestedTransactionProtection { get; set; }
             public string ErrorMessage { get; set; }
             public IList<string> IncludedCategoryNames { get; } = new List<string>();
             public IList<string> SharedParameterGroupNames { get; } = new List<string>();

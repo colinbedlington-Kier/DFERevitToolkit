@@ -133,6 +133,14 @@ namespace DfEIfcNamer.Services
             _diagnostics.AddInfo("AssignParameters", "Assign parameters request started.");
             var selectedCategories = selectedCategoryIds?.Select(id => Category.GetCategory(doc, id)).Where(c => c != null).ToList();
             var bindingSummary = _parameterService.EnsureIfcNameParameters(doc, selectedCategories);
+            _diagnostics.AddInfo("AssignParametersTransaction", "Real assign transaction diagnostics.", new
+            {
+                bindingSummary.DocumentModifiableOnEntry,
+                bindingSummary.CallerHadActiveTransaction,
+                bindingSummary.MethodStartedTransaction,
+                bindingSummary.TransactionCommitted,
+                bindingSummary.AbortedDueToNestedTransactionProtection
+            });
             var status = CheckSetup(doc, selectedCategoryIds);
             status.FailedBindingInsertCount = bindingSummary.FailedBindingInsertCount;
             status.IncludedCategoriesCount = bindingSummary.IncludedCategoriesCount;
@@ -166,9 +174,11 @@ namespace DfEIfcNamer.Services
             _diagnostics.AddInfo("AssignParameters", "Assign parameters request completed.", new
             {
                 status.ParametersRequestedCount,
+                status.ParametersFoundInSharedFileCount,
                 status.InsertSucceededCount,
                 status.ReInsertSucceededCount,
-                status.VerifiedBoundCount
+                status.VerifiedBoundCount,
+                status.VerificationFailedCount
             });
             return status;
         }
