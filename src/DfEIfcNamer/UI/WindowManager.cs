@@ -7,7 +7,7 @@ namespace DfEIfcNamer.UI
     {
         private static DfEFloatingWindow _window;
 
-        public static void ShowOrActivate(UIApplication uiApp, MainViewModel viewModel)
+        public static void ShowOrActivate(UIApplication uiApp, AuthoringToolViewModel viewModel)
         {
             if (_window == null || !_window.IsLoaded)
             {
@@ -26,7 +26,7 @@ namespace DfEIfcNamer.UI
             _window.Activate();
             _window.Topmost = true;
             _window.Topmost = false;
-            viewModel.DocumentStatus = "Document: " + (uiApp.ActiveUIDocument?.Document?.Title ?? "n/a");
+            viewModel.RefreshDocumentStatus(uiApp.ActiveUIDocument?.Document?.Title);
         }
 
         public static void CloseWindow()

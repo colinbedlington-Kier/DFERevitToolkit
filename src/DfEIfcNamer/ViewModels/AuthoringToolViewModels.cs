@@ -1,0 +1,545 @@
+using System;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Windows.Input;
+using Autodesk.Revit.DB;
+using DfEIfcNamer.Commands;
+using DfEIfcNamer.ExternalEvents;
+using DfEIfcNamer.Models;
+using Microsoft.Win32;
+
+namespace DfEIfcNamer.ViewModels
+{
+    public class AuthoringToolViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+
+        public AuthoringToolViewModel(RevitRequestDispatcher dispatcher)
+        {
+            _dispatcher = dispatcher;
+            Setup = new SetupViewModel(dispatcher);
+            Naming = new NamingViewModel(dispatcher);
+            HeaderData = new HeaderDataViewModel(dispatcher);
+            SpaceZone = new SpaceZoneViewModel(dispatcher);
+            Validation = new ValidationViewModel(dispatcher, Setup, Naming, HeaderData, SpaceZone);
+            ExitCommand = new RelayCommand(_ => RequestClose?.Invoke());
+            DocumentStatus = "Document: n/a";
+        }
+
+        public event Action RequestClose;
+        public SetupViewModel Setup { get; }
+        public NamingViewModel Naming { get; }
+        public HeaderDataViewModel HeaderData { get; }
+        public SpaceZoneViewModel SpaceZone { get; }
+        public ValidationViewModel Validation { get; }
+        public ICommand ExitCommand { get; }
+
+        private string _documentStatus;
+        public string DocumentStatus { get => _documentStatus; set { _documentStatus = value; RaisePropertyChanged(); } }
+
+        private string _globalStatus = "Ready";
+        public string GlobalStatus { get => _globalStatus; set { _globalStatus = value; RaisePropertyChanged(); } }
+
+        public void RefreshDocumentStatus(string title) => DocumentStatus = "Document: " + (title ?? "n/a");
+    }
+
+    public class SetupViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+        public SetupViewModel(RevitRequestDispatcher dispatcher)
+        {
+            _dispatcher = dispatcher;
+            ParameterStatuses = new ObservableCollection<RequiredParameterStatus>();
+            Log = new ObservableCollection<string>();
+            Categories = new ObservableCollection<CategorySelectionItem>();
+            CheckSetupCommand = new RelayCommand(_ => CheckSetup());
+            CreateMissingParametersCommand = new RelayCommand(_ => CreateParameters());
+            LoadNamingCodeMapCommand = new RelayCommand(_ => LoadNamingCodes());
+            LoadSystemListCommand = new RelayCommand(_ => LoadSystems());
+            ExportSetupReportCommand = new RelayCommand(_ => ExportReport());
+            Status = "Not checked";
+            LoadCategories();
+        }
+
+        public ObservableCollection<RequiredParameterStatus> ParameterStatuses { get; }
+        public ObservableCollection<string> Log { get; }
+        public ObservableCollection<CategorySelectionItem> Categories { get; }
+        public ICommand CheckSetupCommand { get; }
+        public ICommand CreateMissingParametersCommand { get; }
+        public ICommand LoadNamingCodeMapCommand { get; }
+        public ICommand LoadSystemListCommand { get; }
+        public ICommand ExportSetupReportCommand { get; }
+        public SetupCheckResult LastResult { get; private set; }
+
+        private string _status;
+        public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
+
+        private string _namingCodeStatus = "Naming map: embedded";
+        public string NamingCodeStatus { get => _namingCodeStatus; set { _namingCodeStatus = value; RaisePropertyChanged(); } }
+
+        private string _systemListStatus = "System list: embedded";
+        public string SystemListStatus { get => _systemListStatus; set { _systemListStatus = value; RaisePropertyChanged(); } }
+
+        private void LoadCategories()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.GetCategories,
+                Callback = r =>
+                {
+                    Categories.Clear();
+                    foreach (var c in r.Categories ?? Enumerable.Empty<Category>()) Categories.Add(new CategorySelectionItem { Id = c.Id.Value, Name = c.Name, IsSelected = true });
+                }
+            });
+        }
+
+        private void CheckSetup()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.CheckAuthoringSetup,
+                CategoryIds = Categories.Where(c => c.IsSelected).Select(c => new ElementId(c.Id)).ToList(),
+                Callback = r => ApplyResult(r.AuthoringSetup)
+            });
+        }
+
+        private void CreateParameters()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.CreateAuthoringParameters,
+                CategoryIds = Categories.Where(c => c.IsSelected).Select(c => new ElementId(c.Id)).ToList(),
+                Callback = r => ApplyResult(r.AuthoringSetup)
+            });
+        }
+
+        private void LoadNamingCodes()
+        {
+            var dialog = new OpenFileDialog { Filter = "JSON/CSV|*.json;*.csv" };
+            var path = dialog.ShowDialog() == true ? dialog.FileName : null;
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.LoadNamingCodeMap,
+                ExternalPath = path,
+                Callback = r =>
+                {
+                    NamingCodeStatus = $"Naming map entries: {r.NamingCodes?.Count ?? 0}";
+                    Log.Add("Loaded naming code map.");
+                }
+            });
+        }
+
+        private void LoadSystems()
+        {
+            var dialog = new OpenFileDialog { Filter = "JSON/CSV|*.json;*.csv" };
+            var path = dialog.ShowDialog() == true ? dialog.FileName : null;
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.LoadSystemList,
+                ExternalPath = path,
+                Callback = r =>
+                {
+                    SystemListStatus = $"Systems loaded: {r.Systems?.Count ?? 0}";
+                    Log.Add("Loaded system list.");
+                }
+            });
+        }
+
+        private void ExportReport()
+        {
+            var dialog = new SaveFileDialog { Filter = "Text|*.txt", FileName = "DfE_SetupReport.txt" };
+            if (dialog.ShowDialog() != true) return;
+            var sb = new StringBuilder();
+            sb.AppendLine(Status);
+            foreach (var p in ParameterStatuses) sb.AppendLine($"{p.ParameterName}\t{p.Scope}\t{p.Exists}\t{p.Writable}\t{p.Notes}");
+            File.WriteAllText(dialog.FileName, sb.ToString());
+        }
+
+        private void ApplyResult(SetupCheckResult setup)
+        {
+            LastResult = setup;
+            Status = $"{setup?.Status ?? "Error"}: {setup?.Notes}";
+            ParameterStatuses.Clear();
+            foreach (var row in setup?.Parameters ?? Enumerable.Empty<RequiredParameterStatus>()) ParameterStatuses.Add(row);
+            if (!string.IsNullOrWhiteSpace(Status)) Log.Add(Status);
+        }
+    }
+
+    public class NamingViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+        public NamingViewModel(RevitRequestDispatcher dispatcher)
+        {
+            _dispatcher = dispatcher;
+            ScopeModes = new ObservableCollection<string>(Enum.GetNames(typeof(NamingScopeMode)));
+            NumberingModes = new ObservableCollection<string>(Enum.GetNames(typeof(InstanceNumberingMode)));
+            Rows = new ObservableCollection<NamingPreviewRow>();
+            Categories = new ObservableCollection<CategorySelectionItem>();
+            Systems = new ObservableCollection<SystemRegistryEntry>();
+            Warnings = new ObservableCollection<string>();
+            GeneratePreviewCommand = new RelayCommand(_ => Generate());
+            ApplyIfcNameCommand = new RelayCommand(_ => Apply(RevitRequestId.ApplyNamingInstance));
+            ApplyIfcTypeCommand = new RelayCommand(_ => Apply(RevitRequestId.ApplyNamingType));
+            ApplySystemDataCommand = new RelayCommand(_ => Apply(RevitRequestId.ApplySystemData));
+            ApplyAllCommand = new RelayCommand(_ => Apply(RevitRequestId.ApplyNamingAll));
+            ValidateCommand = new RelayCommand(_ => ValidateOnly());
+            ExportReportCommand = new RelayCommand(_ => Export());
+            ScopeMode = ScopeModes.First();
+            NumberingMode = NumberingModes.First();
+            FallbackCode = "UNM";
+            TypeNumberWidth = 2;
+            LoadCategories();
+            LoadSystems();
+        }
+
+        public ObservableCollection<string> ScopeModes { get; }
+        public ObservableCollection<string> NumberingModes { get; }
+        public ObservableCollection<NamingPreviewRow> Rows { get; }
+        public ObservableCollection<CategorySelectionItem> Categories { get; }
+        public ObservableCollection<SystemRegistryEntry> Systems { get; }
+        public ObservableCollection<string> Warnings { get; }
+        public ICommand GeneratePreviewCommand { get; }
+        public ICommand ApplyIfcNameCommand { get; }
+        public ICommand ApplyIfcTypeCommand { get; }
+        public ICommand ApplySystemDataCommand { get; }
+        public ICommand ApplyAllCommand { get; }
+        public ICommand ValidateCommand { get; }
+        public ICommand ExportReportCommand { get; }
+        public NamingPreviewResult LastPreview { get; private set; }
+
+        public string ScopeMode { get; set; }
+        public string NumberingMode { get; set; }
+        public bool UseFallbackCode { get; set; } = true;
+        public string FallbackCode { get; set; }
+        public string SelectedSystemName { get; set; }
+        public int TypeNumberWidth { get; set; }
+        public bool AllowDoorWindowUnassignedFallback { get; set; }
+
+        private string _status = "No preview generated.";
+        public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
+
+        private void LoadCategories()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.GetCategories,
+                Callback = r =>
+                {
+                    Categories.Clear();
+                    foreach (var c in r.Categories ?? Enumerable.Empty<Category>()) Categories.Add(new CategorySelectionItem { Id = c.Id.Value, Name = c.Name, IsSelected = true });
+                }
+            });
+        }
+
+        private void LoadSystems()
+        {
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.LoadSystemList, Callback = r =>
+            {
+                Systems.Clear();
+                foreach (var s in r.Systems ?? Enumerable.Empty<SystemRegistryEntry>()) Systems.Add(s);
+            }});
+        }
+
+        private void Generate()
+        {
+            var request = new NamingGenerationRequest
+            {
+                ScopeMode = Enum.TryParse(ScopeMode, out NamingScopeMode scope) ? scope : NamingScopeMode.CurrentSelection,
+                InstanceNumberingMode = Enum.TryParse(NumberingMode, out InstanceNumberingMode mode) ? mode : InstanceNumberingMode.Sequential,
+                CategoryIds = Categories.Where(c => c.IsSelected).Select(c => c.Id).ToList(),
+                UseFallbackCode = UseFallbackCode,
+                FallbackCode = FallbackCode,
+                TypeNumberWidth = TypeNumberWidth <= 0 ? 2 : TypeNumberWidth,
+                SelectedSystemName = SelectedSystemName,
+                AllowDoorWindowUnassignedFallback = AllowDoorWindowUnassignedFallback
+            };
+
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.GenerateNamingPreview, NamingRequest = request, Callback = r => ApplyPreview(r.NamingPreview) });
+        }
+
+        private void ValidateOnly()
+        {
+            if (LastPreview == null) { Status = "Generate preview first."; return; }
+            Warnings.Clear();
+            foreach (var w in LastPreview.Warnings) Warnings.Add(w);
+            Status = $"Validation complete. Eligible: {LastPreview.EligibleCount}, Errors: {LastPreview.ErrorCount}, Warnings: {Warnings.Count}";
+        }
+
+        private void Apply(RevitRequestId requestId)
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = requestId,
+                NamingRows = Rows.ToList(),
+                Callback = r => { Status = $"Updated: {r.ApplyResult?.Updated ?? 0}, Skipped: {r.ApplyResult?.Skipped ?? 0}, Failed: {r.ApplyResult?.Failed ?? 0}"; }
+            });
+        }
+
+        private void Export()
+        {
+            var dialog = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "DfE_NamingReport.csv" };
+            if (dialog.ShowDialog() != true) return;
+            var lines = new[] { "ElementId,Category,CurrentIFCName,ProposedIFCName,Status" }
+                .Concat(Rows.Select(r => $"{r.ElementId},{r.Category},{r.CurrentIfcName},{r.ProposedIfcName},{r.Status}"));
+            File.WriteAllLines(dialog.FileName, lines);
+        }
+
+        private void ApplyPreview(NamingPreviewResult preview)
+        {
+            LastPreview = preview;
+            Rows.Clear();
+            foreach (var row in preview?.Rows ?? Enumerable.Empty<NamingPreviewRow>()) Rows.Add(row);
+            Warnings.Clear();
+            foreach (var warning in preview?.Warnings ?? Enumerable.Empty<string>()) Warnings.Add(warning);
+            Status = $"Selected: {preview?.SelectedCount ?? 0}, Eligible: {preview?.EligibleCount ?? 0}, Skipped: {preview?.SkippedCount ?? 0}, Errors: {preview?.ErrorCount ?? 0}";
+        }
+    }
+
+    public class HeaderDataViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+        private readonly TemplateConfigService _template = new TemplateConfigService();
+
+        public HeaderDataViewModel(RevitRequestDispatcher dispatcher)
+        {
+            _dispatcher = dispatcher;
+            ReadFromModelCommand = new RelayCommand(_ => Read());
+            ValidateCommand = new RelayCommand(_ => Validate());
+            WriteToModelCommand = new RelayCommand(_ => Write());
+            SaveTemplateCommand = new RelayCommand(_ => SaveTemplate());
+            LoadTemplateCommand = new RelayCommand(_ => LoadTemplate());
+            ExportSummaryCommand = new RelayCommand(_ => Export());
+            ValidationMessages = new ObservableCollection<string>();
+        }
+
+        public HeaderDataModel Data { get; private set; } = new HeaderDataModel();
+        public HeaderValidationResult LastValidation { get; private set; } = new HeaderValidationResult();
+        public ObservableCollection<string> ValidationMessages { get; }
+        public ICommand ReadFromModelCommand { get; }
+        public ICommand ValidateCommand { get; }
+        public ICommand WriteToModelCommand { get; }
+        public ICommand SaveTemplateCommand { get; }
+        public ICommand LoadTemplateCommand { get; }
+        public ICommand ExportSummaryCommand { get; }
+
+        public string IfcProjectName { get => Data.IfcProjectName; set { Data.IfcProjectName = value; RaisePropertyChanged(); } }
+        public string IfcProjectDescription { get => Data.IfcProjectDescription; set { Data.IfcProjectDescription = value; RaisePropertyChanged(); } }
+        public string IfcSiteName { get => Data.IfcSiteName; set { Data.IfcSiteName = value; RaisePropertyChanged(); } }
+        public string IfcSiteDescription { get => Data.IfcSiteDescription; set { Data.IfcSiteDescription = value; RaisePropertyChanged(); } }
+        public string IfcBuildingName { get => Data.IfcBuildingName; set { Data.IfcBuildingName = value; RaisePropertyChanged(); } }
+        public string IfcBuildingDescription { get => Data.IfcBuildingDescription; set { Data.IfcBuildingDescription = value; RaisePropertyChanged(); } }
+        public string UPRN { get => Data.UPRN; set { Data.UPRN = value; RaisePropertyChanged(); } }
+        public string MaximumBlockHeight { get => Data.MaximumBlockHeight; set { Data.MaximumBlockHeight = value; RaisePropertyChanged(); } }
+
+        private string _status = "No header data loaded.";
+        public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
+
+        private void Read()
+        {
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ReadHeaderData, Callback = r => { Data = r.HeaderData ?? new HeaderDataModel(); RefreshAll(); Status = "Header data read from model."; } });
+        }
+
+        private void Validate()
+        {
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ValidateHeaderData, HeaderData = Data, Callback = r => ApplyValidation(r.HeaderValidation) });
+        }
+
+        private void Write()
+        {
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.WriteHeaderData, HeaderData = Data, Callback = r => { ApplyValidation(r.HeaderValidation); Status = $"Write complete. Updated {r.ApplyResult?.Updated ?? 0}, skipped {r.ApplyResult?.Skipped ?? 0}."; } });
+        }
+
+        private void SaveTemplate()
+        {
+            var d = new SaveFileDialog { Filter = "JSON|*.json", FileName = "DfE_HeaderTemplate.json" };
+            if (d.ShowDialog() != true) return;
+            _template.SaveHeaderTemplate(d.FileName, Data);
+            Status = "Template saved.";
+        }
+
+        private void LoadTemplate()
+        {
+            var d = new OpenFileDialog { Filter = "JSON|*.json" };
+            if (d.ShowDialog() != true) return;
+            Data = _template.LoadHeaderTemplate(d.FileName);
+            RefreshAll();
+            Status = "Template loaded.";
+        }
+
+        private void Export()
+        {
+            var d = new SaveFileDialog { Filter = "Text|*.txt", FileName = "DfE_HeaderSummary.txt" };
+            if (d.ShowDialog() != true) return;
+            File.WriteAllText(d.FileName, $"Project: {IfcProjectName}\nSite: {IfcSiteName}\nBuilding: {IfcBuildingName}\nUPRN: {UPRN}\nMaximumBlockHeight: {MaximumBlockHeight}");
+            Status = "Header summary exported.";
+        }
+
+        private void ApplyValidation(HeaderValidationResult validation)
+        {
+            LastValidation = validation ?? new HeaderValidationResult();
+            ValidationMessages.Clear();
+            foreach (var m in LastValidation.Messages) ValidationMessages.Add(m);
+            if (!ValidationMessages.Any()) ValidationMessages.Add("No validation warnings.");
+        }
+
+        private void RefreshAll()
+        {
+            RaisePropertyChanged(nameof(IfcProjectName)); RaisePropertyChanged(nameof(IfcProjectDescription)); RaisePropertyChanged(nameof(IfcSiteName));
+            RaisePropertyChanged(nameof(IfcSiteDescription)); RaisePropertyChanged(nameof(IfcBuildingName)); RaisePropertyChanged(nameof(IfcBuildingDescription));
+            RaisePropertyChanged(nameof(UPRN)); RaisePropertyChanged(nameof(MaximumBlockHeight));
+        }
+    }
+
+    public class SpaceZoneViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+        public SpaceZoneViewModel(RevitRequestDispatcher dispatcher)
+        {
+            _dispatcher = dispatcher;
+            Rows = new ObservableCollection<SpaceZonePreviewRow>();
+            LoadSelectionCommand = new RelayCommand(_ => Resolve());
+            ResolveRoomsCommand = new RelayCommand(_ => Resolve());
+            ApplySpaceReferenceCommand = new RelayCommand(_ => ApplySpace());
+            ApplyZoneNameCommand = new RelayCommand(_ => ApplyZone());
+            ValidateAssignmentCommand = new RelayCommand(_ => Validate());
+            ExportReportCommand = new RelayCommand(_ => Export());
+        }
+
+        public ObservableCollection<SpaceZonePreviewRow> Rows { get; }
+        public SpaceZonePreviewResult LastPreview { get; private set; }
+        public ICommand LoadSelectionCommand { get; }
+        public ICommand ResolveRoomsCommand { get; }
+        public ICommand ApplySpaceReferenceCommand { get; }
+        public ICommand ApplyZoneNameCommand { get; }
+        public ICommand ValidateAssignmentCommand { get; }
+        public ICommand ExportReportCommand { get; }
+        public string ProposedZoneName { get; set; }
+
+        private string _status = "No selection loaded.";
+        public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
+
+        private void Resolve()
+        {
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ResolveSpaceZone, SpaceZoneRequest = new SpaceZoneRequest { ProposedZoneName = ProposedZoneName }, Callback = r =>
+            {
+                LastPreview = r.SpaceZonePreview;
+                Rows.Clear();
+                foreach (var row in r.SpaceZonePreview?.Rows ?? Enumerable.Empty<SpaceZonePreviewRow>()) Rows.Add(row);
+                Status = $"Loaded {Rows.Count} rows. Missing rooms: {r.SpaceZonePreview?.MissingRoomCount ?? 0}";
+            }});
+        }
+
+        private void ApplySpace()
+        {
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ApplySpaceReference, SpaceZoneRows = Rows.ToList(), Callback = r => Status = $"SpaceReference updated: {r.ApplyResult?.Updated ?? 0}, skipped: {r.ApplyResult?.Skipped ?? 0}" });
+        }
+
+        private void ApplyZone()
+        {
+            foreach (var row in Rows) row.ProposedZoneName = ProposedZoneName;
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ApplyZoneName, SpaceZoneRows = Rows.ToList(), Callback = r => Status = $"ZoneName updated: {r.ApplyResult?.Updated ?? 0}, skipped: {r.ApplyResult?.Skipped ?? 0}" });
+        }
+
+        private void Validate()
+        {
+            var missing = Rows.Count(r => string.IsNullOrWhiteSpace(r.RoomNumber));
+            Status = $"Validation: {Rows.Count} rows, missing room references: {missing}";
+        }
+
+        private void Export()
+        {
+            var d = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "DfE_SpaceZoneReport.csv" };
+            if (d.ShowDialog() != true) return;
+            var lines = new[] { "ElementId,RoomNumber,RoomName,ProposedSpaceReference,ProposedZoneName,Status" }
+                .Concat(Rows.Select(r => $"{r.ElementId},{r.RoomNumber},{r.RoomName},{r.ProposedSpaceReference},{r.ProposedZoneName},{r.Status}"));
+            File.WriteAllLines(d.FileName, lines);
+        }
+    }
+
+    public class ValidationViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+        private readonly SetupViewModel _setup;
+        private readonly NamingViewModel _naming;
+        private readonly HeaderDataViewModel _header;
+        private readonly SpaceZoneViewModel _space;
+
+        public ValidationViewModel(RevitRequestDispatcher dispatcher, SetupViewModel setup, NamingViewModel naming, HeaderDataViewModel header, SpaceZoneViewModel space)
+        {
+            _dispatcher = dispatcher;
+            _setup = setup;
+            _naming = naming;
+            _header = header;
+            _space = space;
+            Messages = new ObservableCollection<string>();
+            RunValidationCommand = new RelayCommand(_ => RunValidation());
+            SyncCobieCommand = new RelayCommand(_ => SyncCobie());
+            ExportReportCommand = new RelayCommand(_ => Export());
+        }
+
+        public ObservableCollection<string> Messages { get; }
+        public ICommand RunValidationCommand { get; }
+        public ICommand SyncCobieCommand { get; }
+        public ICommand ExportReportCommand { get; }
+
+        private string _setupReadiness = "Unknown";
+        public string SetupReadiness { get => _setupReadiness; set { _setupReadiness = value; RaisePropertyChanged(); } }
+        private string _namingCompleteness = "Unknown";
+        public string NamingCompleteness { get => _namingCompleteness; set { _namingCompleteness = value; RaisePropertyChanged(); } }
+        private string _headerCompleteness = "Unknown";
+        public string HeaderCompleteness { get => _headerCompleteness; set { _headerCompleteness = value; RaisePropertyChanged(); } }
+        private string _spaceZoneCompleteness = "Unknown";
+        public string SpaceZoneCompleteness { get => _spaceZoneCompleteness; set { _spaceZoneCompleteness = value; RaisePropertyChanged(); } }
+
+        private string _status = "Validation not run.";
+        public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
+
+        private void RunValidation()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.RunAuthoringValidation,
+                SetupSnapshot = _setup.LastResult,
+                NamingSnapshot = _naming.LastPreview,
+                HeaderSnapshot = _header.LastValidation,
+                SpaceZoneSnapshot = _space.LastPreview,
+                Callback = r =>
+                {
+                    var summary = r.ValidationSummary;
+                    SetupReadiness = summary?.SetupReadiness ?? "Unknown";
+                    NamingCompleteness = summary?.NamingCompleteness ?? "Unknown";
+                    HeaderCompleteness = summary?.HeaderCompleteness ?? "Unknown";
+                    SpaceZoneCompleteness = summary?.SpaceZoneCompleteness ?? "Unknown";
+                    Messages.Clear();
+                    foreach (var m in summary?.Messages ?? Enumerable.Empty<string>()) Messages.Add(m);
+                    Status = "Validation complete.";
+                }
+            });
+        }
+
+        private void SyncCobie()
+        {
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.SyncCobieFromIfc, Callback = r =>
+            {
+                Status = $"COBie sync done. Instance updated: {r.SyncResult?.InstancesUpdated ?? 0}, Type updated: {r.SyncResult?.TypesUpdated ?? 0}";
+            }});
+        }
+
+        private void Export()
+        {
+            var d = new SaveFileDialog { Filter = "Text|*.txt", FileName = "DfE_ValidationReport.txt" };
+            if (d.ShowDialog() != true) return;
+            var lines = new[]
+            {
+                "Setup: " + SetupReadiness,
+                "Naming: " + NamingCompleteness,
+                "Header: " + HeaderCompleteness,
+                "Space/Zone: " + SpaceZoneCompleteness,
+                "Messages:",
+            }.Concat(Messages);
+            File.WriteAllLines(d.FileName, lines);
+        }
+    }
+}

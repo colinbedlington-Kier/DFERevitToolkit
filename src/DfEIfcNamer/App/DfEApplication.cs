@@ -13,7 +13,7 @@ namespace DfEIfcNamer.App
 {
     public class DfEApplication : IExternalApplication
     {
-        private static MainViewModel _viewModel;
+        private static AuthoringToolViewModel _viewModel;
 
         public Result OnStartup(UIControlledApplication application)
         {
@@ -23,12 +23,20 @@ namespace DfEIfcNamer.App
             var sharedParameterInspector = new SharedParameterFileInspector();
             var cobieSyncService = new CobieSyncService(parameterService, resourceJsonService, diagnosticsCollector, sharedParameterInspector);
             var settingsStore = new ProjectSettingsStore();
+            var templateConfigService = new TemplateConfigService();
+            var namingCodeRegistry = new NamingCodeRegistryService();
+            var systemRegistry = new SystemRegistryService();
+            var spaceZoneService = new SpaceZoneService();
+            var authoringNamingService = new AuthoringNamingService(namingCodeRegistry, systemRegistry, spaceZoneService);
+            var headerService = new IfcHeaderService();
+            var validationService = new ValidationService();
+            var authoringService = new IfcAuthoringService(cobieSyncService, templateConfigService, namingCodeRegistry, systemRegistry, authoringNamingService, headerService, spaceZoneService, validationService, diagnosticsCollector);
 
-            var executionHandler = new RevitExecutionHandler(cobieSyncService, settingsStore);
+            var executionHandler = new RevitExecutionHandler(cobieSyncService, settingsStore, authoringService);
             var externalEvent = ExternalEvent.Create(executionHandler);
             var requestDispatcher = new RevitRequestDispatcher(executionHandler, externalEvent);
 
-            _viewModel = new MainViewModel(requestDispatcher);
+            _viewModel = new AuthoringToolViewModel(requestDispatcher);
             _viewModel.RequestClose += () => WindowManager.CloseWindow();
 
             CreateRibbon(application);

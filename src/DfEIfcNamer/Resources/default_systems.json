@@ -1,0 +1,20 @@
+[
+  {
+    "SystemName": "LTHW-01",
+    "SystemDescription": "Low temperature hot water serving east wing radiators",
+    "Discipline": "Mechanical",
+    "AllowedIfcClasses": ["PipeSegment", "PipeFitting", "FlowTerminal"]
+  },
+  {
+    "SystemName": "SA-01",
+    "SystemDescription": "Supply air serving level 01",
+    "Discipline": "Mechanical",
+    "AllowedIfcClasses": ["DuctSegment", "DuctFitting", "AirTerminal"]
+  },
+  {
+    "SystemName": "ELEC-LTG-01",
+    "SystemDescription": "Lighting circuit system",
+    "Discipline": "Electrical",
+    "AllowedCategories": ["Lighting Fixtures", "Electrical Fixtures"]
+  }
+]
