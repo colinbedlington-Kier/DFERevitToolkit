@@ -1,133 +1,191 @@
 <Window x:Class="DfEIfcNamer.UI.DfEFloatingWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="DfE IFC Namer" Height="700" Width="950" WindowStartupLocation="CenterOwner">
+        Title="DfE IFC Authoring Tool" Height="760" Width="1220" WindowStartupLocation="CenterOwner">
     <DockPanel Margin="10">
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem Content="{Binding DocumentStatus}"/>
-            <StatusBarItem Content="{Binding MappingLoadedStatus}"/>
-            <StatusBarItem Content="{Binding LastSyncStatus}"/>
+            <StatusBarItem Content="{Binding GlobalStatus}"/>
         </StatusBar>
+
         <TabControl>
             <TabItem Header="Setup">
                 <Grid Margin="8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="Check Parameters" Width="140" Margin="0,0,8,0" Command="{Binding CheckParametersCommand}"/>
-                        <Button Content="Assign Parameters" Width="140" Command="{Binding AssignParametersCommand}"/>
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Margin="0,10,0,0">
-                        <TextBlock Text="Parameter status" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding SetupStatus}" Margin="0,4,0,0"/>
-                        <TextBlock Text="Setup diagnostics" FontWeight="Bold" Margin="0,12,0,4"/>
-                        <TextBlock Text="{Binding CoverageStatus}" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                        <TextBlock Text="Included Categories" Margin="0,12,0,4" FontWeight="Bold"/>
-                        <ListBox ItemsSource="{Binding Categories}" Height="180">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}"/>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                        <TextBlock Text="Parameter assignment results" Margin="0,12,0,4" FontWeight="Bold"/>
-                        <DataGrid ItemsSource="{Binding ParameterResults}" AutoGenerateColumns="False" IsReadOnly="True" Height="180">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="170"/>
-                                <DataGridTextColumn Header="Expected" Binding="{Binding ExpectedBindingType}" Width="80"/>
-                                <DataGridTextColumn Header="In SP File" Binding="{Binding FoundInSharedParameterFile}" Width="75"/>
-                                <DataGridTextColumn Header="Bind Attempted" Binding="{Binding InsertAttempted}" Width="90"/>
-                                <DataGridTextColumn Header="Insert/ReInsert Result" Binding="{Binding BindingAction}" Width="110"/>
-                                <DataGridTextColumn Header="Diagnostic Only" Binding="{Binding DiagnosticRollbackUsed}" Width="90"/>
-                                <DataGridTextColumn Header="Persisted" Binding="{Binding PersistedToModel}" Width="70"/>
-                                <DataGridTextColumn Header="Verification" Binding="{Binding VerificationStatus}" Width="90"/>
-                                <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="*"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </StackPanel>
-                </Grid>
-            </TabItem>
-            <TabItem Header="Sync with COBie">
-                <Grid Margin="8">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="220"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock Text="Source IFCName (instance)" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding InstanceSource}" Grid.Row="0" Grid.Column="1"/>
-
-                    <TextBlock Text="Target COBie.Component.Name" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"/>
-                    <ComboBox ItemsSource="{Binding InstanceTargetOptions}" SelectedItem="{Binding InstanceTarget}" Grid.Row="1" Grid.Column="1"/>
-
-                    <TextBlock Text="Source IFCName [Type]" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding TypeSource}" Grid.Row="2" Grid.Column="1"/>
-
-                    <TextBlock Text="Target COBie.Type.Name" Grid.Row="3" Grid.Column="0" VerticalAlignment="Center"/>
-                    <ComboBox ItemsSource="{Binding TypeTargetOptions}" SelectedItem="{Binding TypeTarget}" Grid.Row="3" Grid.Column="1"/>
-
-                    <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0">
-                        <TextBlock Text="Scope" FontWeight="Bold"/>
-                        <ComboBox ItemsSource="{Binding ScopeOptions}" SelectedItem="{Binding SelectedScope}" Width="220"/>
-                        <TextBlock Text="Overwrite mode" FontWeight="Bold" Margin="0,8,0,0"/>
-                        <ComboBox ItemsSource="{Binding OverwriteOptions}" SelectedItem="{Binding SelectedOverwrite}" Width="260"/>
-                        <TextBlock Text="Results log" FontWeight="Bold" Margin="0,8,0,4"/>
-                        <ListBox ItemsSource="{Binding Logs}" Height="220"/>
-                    </StackPanel>
-
-                    <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-                        <Button Content="Reload Mapping" Width="120" Margin="0,0,8,0" Command="{Binding ReloadMappingCommand}"/>
-                        <Button Content="Save + Apply" Width="120" Command="{Binding SaveAndApplyCommand}"/>
-                    </StackPanel>
-                </Grid>
-            </TabItem>
-            <TabItem Header="About">
-                <StackPanel Margin="8">
-                    <TextBlock Text="DfE IFC Namer" FontSize="16" FontWeight="Bold"/>
-                    <TextBlock Text="Setup and Sync with COBie mappings." Margin="0,8,0,12"/>
-                    <Button Content="Exit" Width="100" Command="{Binding ExitCommand}" HorizontalAlignment="Left"/>
-                </StackPanel>
-            </TabItem>
-            <TabItem Header="Diagnostics">
-                <Grid Margin="8">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="120"/>
                     </Grid.RowDefinitions>
                     <WrapPanel>
-                        <Button Content="Run Full Diagnostics" Margin="0,0,8,8" Click="RunFullDiagnostics_Click"/>
-                        <Button Content="Check Shared Parameter File" Margin="0,0,8,8" Click="CheckSharedParameterFile_Click"/>
-                        <Button Content="Check Expected Definitions" Margin="0,0,8,8" Click="CheckExpectedDefinitions_Click"/>
-                        <Button Content="Check Category Bindings" Margin="0,0,8,8" Click="CheckCategoryBindings_Click"/>
-                        <Button Content="Test Single Parameter Bind" Margin="0,0,8,8" Click="TestSingleParameterBind_Click"/>
-                        <Button Content="Clear Log" Margin="0,0,8,8" Click="ClearLog_Click"/>
-                        <Button Content="Copy Log" Margin="0,0,8,8" Click="CopyLog_Click"/>
-                        <Button Content="Export TXT" Margin="0,0,8,8" Click="ExportTxt_Click"/>
-                        <Button Content="Export JSON" Margin="0,0,8,8" Click="ExportJson_Click"/>
+                        <Button Content="Check Setup" Margin="0,0,8,8" Command="{Binding Setup.CheckSetupCommand}"/>
+                        <Button Content="Create Missing Parameters" Margin="0,0,8,8" Command="{Binding Setup.CreateMissingParametersCommand}"/>
+                        <Button Content="Load Naming Code Map" Margin="0,0,8,8" Command="{Binding Setup.LoadNamingCodeMapCommand}"/>
+                        <Button Content="Load System List" Margin="0,0,8,8" Command="{Binding Setup.LoadSystemListCommand}"/>
+                        <Button Content="Export Setup Report" Margin="0,0,8,8" Command="{Binding Setup.ExportSetupReportCommand}"/>
                     </WrapPanel>
-                    <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,8">
-                        <TextBlock x:Name="DiagSharedPathText" Text="Shared parameter path: n/a" Margin="0,0,8,4" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="DiagFileExistsText" Text="File exists?: n/a" Margin="0,0,8,4"/>
-                        <TextBlock x:Name="DiagOpenSpfText" Text="OpenSharedParameterFile success?: n/a" Margin="0,0,8,4"/>
-                        <TextBlock x:Name="DiagGroupCountText" Text="Group count: 0" Margin="0,0,8,4"/>
-                        <TextBlock x:Name="DiagDefinitionCountText" Text="Definition count: 0" Margin="0,0,8,4"/>
-                        <TextBlock x:Name="DiagLastRunText" Text="Last run: n/a" Margin="0,0,8,4"/>
-                    </UniformGrid>
-                    <TextBox x:Name="DiagnosticsLogTextBox" Grid.Row="2" IsReadOnly="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AcceptsReturn="True" FontFamily="Consolas"/>
+                    <StackPanel Grid.Row="1" Orientation="Vertical" Margin="0,0,0,8">
+                        <TextBlock Text="{Binding Setup.Status}" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding Setup.NamingCodeStatus}"/>
+                        <TextBlock Text="{Binding Setup.SystemListStatus}"/>
+                    </StackPanel>
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding Setup.ParameterStatuses}" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Parameter Name" Binding="{Binding ParameterName}" Width="220"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
+                            <DataGridCheckBoxColumn Header="Exists" Binding="{Binding Exists}" Width="80"/>
+                            <DataGridCheckBoxColumn Header="Writable" Binding="{Binding Writable}" Width="90"/>
+                            <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <ListBox Grid.Row="3" ItemsSource="{Binding Setup.Log}"/>
                 </Grid>
             </TabItem>
+
+            <TabItem Header="Object &amp; System Naming">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="100"/>
+                    </Grid.RowDefinitions>
+                    <WrapPanel>
+                        <TextBlock Text="Scope" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Width="220" ItemsSource="{Binding Naming.ScopeModes}" SelectedItem="{Binding Naming.ScopeMode}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Numbering" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Width="160" ItemsSource="{Binding Naming.NumberingModes}" SelectedItem="{Binding Naming.NumberingMode}" Margin="0,0,8,8"/>
+                        <TextBlock Text="System" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Width="220" DisplayMemberPath="SystemName" SelectedValuePath="SystemName" ItemsSource="{Binding Naming.Systems}" SelectedValue="{Binding Naming.SelectedSystemName}" Margin="0,0,8,8"/>
+                        <CheckBox Content="Use fallback code" IsChecked="{Binding Naming.UseFallbackCode}" Margin="0,0,8,8"/>
+                        <TextBox Width="70" Text="{Binding Naming.FallbackCode}" Margin="0,0,8,8"/>
+                        <CheckBox Content="Allow door/window unassigned fallback" IsChecked="{Binding Naming.AllowDoorWindowUnassignedFallback}"/>
+                    </WrapPanel>
+                    <WrapPanel Grid.Row="1">
+                        <Button Content="Generate Proposed Names" Margin="0,0,8,8" Command="{Binding Naming.GeneratePreviewCommand}"/>
+                        <Button Content="Validate" Margin="0,0,8,8" Command="{Binding Naming.ValidateCommand}"/>
+                        <Button Content="Apply IFCName" Margin="0,0,8,8" Command="{Binding Naming.ApplyIfcNameCommand}"/>
+                        <Button Content="Apply IFCName[Type]" Margin="0,0,8,8" Command="{Binding Naming.ApplyIfcTypeCommand}"/>
+                        <Button Content="Apply System Data" Margin="0,0,8,8" Command="{Binding Naming.ApplySystemDataCommand}"/>
+                        <Button Content="Apply All" Margin="0,0,8,8" Command="{Binding Naming.ApplyAllCommand}"/>
+                        <Button Content="Export Naming Report" Margin="0,0,8,8" Command="{Binding Naming.ExportReportCommand}"/>
+                    </WrapPanel>
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding Naming.Rows}" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110"/>
+                            <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="120"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="120"/>
+                            <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="100"/>
+                            <DataGridTextColumn Header="Current IFCName" Binding="{Binding CurrentIfcName}" Width="120"/>
+                            <DataGridTextColumn Header="Proposed IFCName" Binding="{Binding ProposedIfcName}" Width="120"/>
+                            <DataGridTextColumn Header="Current IFCName[Type]" Binding="{Binding CurrentIfcTypeName}" Width="120"/>
+                            <DataGridTextColumn Header="Proposed IFCName[Type]" Binding="{Binding ProposedIfcTypeName}" Width="140"/>
+                            <DataGridTextColumn Header="Current System" Binding="{Binding CurrentSystemName}" Width="110"/>
+                            <DataGridTextColumn Header="Proposed System" Binding="{Binding ProposedSystemName}" Width="110"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="160"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Grid.Row="3">
+                        <TextBlock Text="{Binding Naming.Status}" FontWeight="Bold"/>
+                        <ListBox ItemsSource="{Binding Naming.Warnings}"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="IFC Header Data">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="120"/></Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <GroupBox Header="Project" Margin="0,0,8,8">
+                        <StackPanel Margin="8">
+                            <TextBlock Text="IfcProjectName"/><TextBox Text="{Binding HeaderData.IfcProjectName, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="IfcProjectDescription" Margin="0,8,0,0"/><TextBox Text="{Binding HeaderData.IfcProjectDescription, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </GroupBox>
+                    <GroupBox Header="Site" Grid.Column="1" Margin="0,0,0,8">
+                        <StackPanel Margin="8">
+                            <TextBlock Text="IfcSiteName"/><TextBox Text="{Binding HeaderData.IfcSiteName, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="IfcSiteDescription" Margin="0,8,0,0"/><TextBox Text="{Binding HeaderData.IfcSiteDescription, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </GroupBox>
+                    <GroupBox Header="Building" Grid.Row="1" Margin="0,0,8,8">
+                        <StackPanel Margin="8">
+                            <TextBlock Text="IfcBuildingName"/><TextBox Text="{Binding HeaderData.IfcBuildingName, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="IfcBuildingDescription" Margin="0,8,0,0"/><TextBox Text="{Binding HeaderData.IfcBuildingDescription, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </GroupBox>
+                    <GroupBox Header="Additional Metadata" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8">
+                        <StackPanel Margin="8">
+                            <TextBlock Text="UPRN"/><TextBox Text="{Binding HeaderData.UPRN, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="MaximumBlockHeight" Margin="0,8,0,0"/><TextBox Text="{Binding HeaderData.MaximumBlockHeight, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </GroupBox>
+                    <WrapPanel Grid.Row="2" Grid.ColumnSpan="2">
+                        <Button Content="Read From Model" Margin="0,0,8,8" Command="{Binding HeaderData.ReadFromModelCommand}"/>
+                        <Button Content="Validate" Margin="0,0,8,8" Command="{Binding HeaderData.ValidateCommand}"/>
+                        <Button Content="Write To Model" Margin="0,0,8,8" Command="{Binding HeaderData.WriteToModelCommand}"/>
+                        <Button Content="Save Template" Margin="0,0,8,8" Command="{Binding HeaderData.SaveTemplateCommand}"/>
+                        <Button Content="Load Template" Margin="0,0,8,8" Command="{Binding HeaderData.LoadTemplateCommand}"/>
+                        <Button Content="Export Header Summary" Margin="0,0,8,8" Command="{Binding HeaderData.ExportSummaryCommand}"/>
+                        <TextBlock Text="{Binding HeaderData.Status}" VerticalAlignment="Center"/>
+                    </WrapPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Space &amp; Zone Assignment">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="80"/></Grid.RowDefinitions>
+                    <WrapPanel>
+                        <Button Content="Load Selection" Margin="0,0,8,8" Command="{Binding SpaceZone.LoadSelectionCommand}"/>
+                        <Button Content="Resolve Rooms/Spaces" Margin="0,0,8,8" Command="{Binding SpaceZone.ResolveRoomsCommand}"/>
+                        <TextBlock Text="Zone" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox Width="180" Text="{Binding SpaceZone.ProposedZoneName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <Button Content="Apply SpaceReference" Margin="0,0,8,8" Command="{Binding SpaceZone.ApplySpaceReferenceCommand}"/>
+                        <Button Content="Apply ZoneName" Margin="0,0,8,8" Command="{Binding SpaceZone.ApplyZoneNameCommand}"/>
+                        <Button Content="Validate Assignment" Margin="0,0,8,8" Command="{Binding SpaceZone.ValidateAssignmentCommand}"/>
+                        <Button Content="Export Assignment Report" Margin="0,0,8,8" Command="{Binding SpaceZone.ExportReportCommand}"/>
+                    </WrapPanel>
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding SpaceZone.Rows}" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110"/>
+                            <DataGridTextColumn Header="Family/Type" Binding="{Binding FamilyType}" Width="130"/>
+                            <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="100"/>
+                            <DataGridTextColumn Header="Room Number" Binding="{Binding RoomNumber}" Width="90"/>
+                            <DataGridTextColumn Header="Room Name" Binding="{Binding RoomName}" Width="120"/>
+                            <DataGridTextColumn Header="Current SpaceReference" Binding="{Binding CurrentSpaceReference}" Width="120"/>
+                            <DataGridTextColumn Header="Proposed SpaceReference" Binding="{Binding ProposedSpaceReference}" Width="140"/>
+                            <DataGridTextColumn Header="Current ZoneName" Binding="{Binding CurrentZoneName}" Width="120"/>
+                            <DataGridTextColumn Header="Proposed ZoneName" Binding="{Binding ProposedZoneName}" Width="120"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Grid.Row="2" Text="{Binding SpaceZone.Status}" FontWeight="Bold"/>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="COBie Sync / Validation">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <WrapPanel>
+                        <Button Content="Run Validation" Margin="0,0,8,8" Command="{Binding Validation.RunValidationCommand}"/>
+                        <Button Content="Sync COBie Parameters" Margin="0,0,8,8" Command="{Binding Validation.SyncCobieCommand}"/>
+                        <Button Content="Export Validation Report" Margin="0,0,8,8" Command="{Binding Validation.ExportReportCommand}"/>
+                    </WrapPanel>
+                    <UniformGrid Grid.Row="1" Columns="2" Margin="0,8,0,8">
+                        <TextBlock Text="Setup readiness:" FontWeight="Bold"/><TextBlock Text="{Binding Validation.SetupReadiness}"/>
+                        <TextBlock Text="Naming completeness:" FontWeight="Bold"/><TextBlock Text="{Binding Validation.NamingCompleteness}"/>
+                        <TextBlock Text="Header completeness:" FontWeight="Bold"/><TextBlock Text="{Binding Validation.HeaderCompleteness}"/>
+                        <TextBlock Text="Space/Zone completeness:" FontWeight="Bold"/><TextBlock Text="{Binding Validation.SpaceZoneCompleteness}"/>
+                    </UniformGrid>
+                    <StackPanel Grid.Row="2">
+                        <TextBlock Text="{Binding Validation.Status}" FontWeight="Bold" Margin="0,0,0,8"/>
+                        <ListBox ItemsSource="{Binding Validation.Messages}"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
         </TabControl>
     </DockPanel>
 </Window>

@@ -1,0 +1,10 @@
+[
+  { "IfcClass": "Door", "PredefinedType": "SingleSwingLeft", "Code": "DRSGL" },
+  { "IfcClass": "Door", "PredefinedType": "", "Code": "DRGEN" },
+  { "IfcClass": "Window", "PredefinedType": "Window", "Code": "WIN" },
+  { "IfcClass": "AirTerminal", "PredefinedType": "SupplyAir", "Code": "ATSUP" },
+  { "IfcClass": "Furniture", "PredefinedType": "Undefined", "Code": "FURGEN" },
+  { "IfcClass": "PipeSegment", "PredefinedType": "", "Code": "PIP" },
+  { "IfcClass": "FlowTerminal", "PredefinedType": "", "Code": "FLT" },
+  { "IfcClass": "BuildingElementProxy", "PredefinedType": "", "Code": "BEP" }
+]

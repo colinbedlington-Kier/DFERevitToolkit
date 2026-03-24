@@ -9,6 +9,23 @@ namespace DfEIfcNamer.ExternalEvents
     {
         CheckSetup,
         AssignParameters,
+        CheckAuthoringSetup,
+        CreateAuthoringParameters,
+        LoadNamingCodeMap,
+        LoadSystemList,
+        GenerateNamingPreview,
+        ApplyNamingInstance,
+        ApplyNamingType,
+        ApplySystemData,
+        ApplyNamingAll,
+        ReadHeaderData,
+        ValidateHeaderData,
+        WriteHeaderData,
+        ResolveSpaceZone,
+        ApplySpaceReference,
+        ApplyZoneName,
+        RunAuthoringValidation,
+        SyncCobieFromIfc,
         LoadMapping,
         SaveMapping,
         ApplySync,
@@ -29,6 +46,16 @@ namespace DfEIfcNamer.ExternalEvents
         public MappingSettings Settings { get; set; }
         public IList<ElementId> CategoryIds { get; set; }
         public string ParameterName { get; set; }
+        public string ExternalPath { get; set; }
+        public NamingGenerationRequest NamingRequest { get; set; }
+        public IList<NamingPreviewRow> NamingRows { get; set; }
+        public HeaderDataModel HeaderData { get; set; }
+        public SpaceZoneRequest SpaceZoneRequest { get; set; }
+        public IList<SpaceZonePreviewRow> SpaceZoneRows { get; set; }
+        public SetupCheckResult SetupSnapshot { get; set; }
+        public NamingPreviewResult NamingSnapshot { get; set; }
+        public HeaderValidationResult HeaderSnapshot { get; set; }
+        public SpaceZonePreviewResult SpaceZoneSnapshot { get; set; }
         public Action<RevitResponse> Callback { get; set; }
     }
 
@@ -41,6 +68,15 @@ namespace DfEIfcNamer.ExternalEvents
         public IList<ProjectParameterOption> TypeParameters { get; set; }
         public IList<Category> Categories { get; set; }
         public DiagnosticsState DiagnosticsState { get; set; }
+        public SetupCheckResult AuthoringSetup { get; set; }
+        public IList<NamingCodeMapEntry> NamingCodes { get; set; }
+        public IList<SystemRegistryEntry> Systems { get; set; }
+        public NamingPreviewResult NamingPreview { get; set; }
+        public ApplyResult ApplyResult { get; set; }
+        public HeaderDataModel HeaderData { get; set; }
+        public HeaderValidationResult HeaderValidation { get; set; }
+        public SpaceZonePreviewResult SpaceZonePreview { get; set; }
+        public ValidationSummary ValidationSummary { get; set; }
         public string Error { get; set; }
     }
 }
