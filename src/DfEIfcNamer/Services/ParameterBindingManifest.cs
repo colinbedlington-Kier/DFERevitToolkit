@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text.Json;
 
 namespace DfEIfcNamer.Services
@@ -27,14 +25,14 @@ namespace DfEIfcNamer.Services
     public static class ParameterBindingManifest
     {
         private const string ManifestFileName = "DfeParameterBindingManifest.json";
-        private const string EmbeddedManifestResource = "DfEIfcNamer.Resources.DfeParameterBindingManifest.json";
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        private static readonly ResourceFileLoader ResourceLoader = new ResourceFileLoader();
         private static IList<ParameterBindingManifestEntry> _cache;
 
         public static IList<ParameterBindingManifestEntry> All()
         {
             if (_cache != null) return _cache.ToList();
-            var json = ReadWithFallback();
+            var json = ResourceLoader.LoadTextResourceOrFile(ManifestFileName);
             _cache = JsonSerializer.Deserialize<List<ParameterBindingManifestEntry>>(json, JsonOptions) ?? new List<ParameterBindingManifestEntry>();
             return _cache.ToList();
         }
@@ -44,24 +42,6 @@ namespace DfEIfcNamer.Services
             return All().FirstOrDefault(x =>
                 string.Equals(x.Name, parameterName, StringComparison.OrdinalIgnoreCase) ||
                 x.Aliases.Any(a => string.Equals(a, parameterName, StringComparison.OrdinalIgnoreCase)));
-        }
-
-        private static string ReadWithFallback()
-        {
-            var addinFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
-            var resourcesPath = Path.Combine(addinFolder, "Resources", ManifestFileName);
-            var directPath = Path.Combine(addinFolder, ManifestFileName);
-            if (File.Exists(resourcesPath)) return File.ReadAllText(resourcesPath);
-            if (File.Exists(directPath)) return File.ReadAllText(directPath);
-
-            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(EmbeddedManifestResource))
-            {
-                if (stream == null) throw new FileNotFoundException("Missing embedded manifest resource: " + EmbeddedManifestResource);
-                using (var reader = new StreamReader(stream))
-                {
-                    return reader.ReadToEnd();
-                }
-            }
         }
     }
 }

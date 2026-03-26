@@ -1,19 +1,15 @@
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using DfEIfcNamer.Models;
 
 namespace DfEIfcNamer.Services
 {
     public class ResourceJsonService
     {
-        private const string EntityResource = "DfEIfcNamer.Resources.DfeIfc2x3Entities.json";
-        private const string ClassificationResource = "DfEIfcNamer.Resources.classification_slots.json";
         private const string EntityFileName = "DfeIfc2x3Entities.json";
         private const string ClassificationFileName = "classification_slots.json";
+        private readonly ResourceFileLoader _resourceLoader = new ResourceFileLoader();
         private static readonly JsonSerializerOptions JsonOpts = new()
         {
             PropertyNameCaseInsensitive = true,
@@ -22,21 +18,17 @@ namespace DfEIfcNamer.Services
             WriteIndented = true
         };
 
-        public string ResolveAddinFolder()
-        {
-            return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
-        }
+        public string ResolveAddinFolder() => _resourceLoader.ResolveAddinFolder();
 
         public string ResolveResourceFilePath(string fileName)
         {
-            var addinFolder = ResolveAddinFolder();
-            var resourceFolderPath = Path.Combine(addinFolder, "Resources", fileName);
+            var resourceFolderPath = _resourceLoader.ResolveExternalResourcePath(fileName);
             if (File.Exists(resourceFolderPath))
             {
                 return resourceFolderPath;
             }
 
-            return Path.Combine(addinFolder, fileName);
+            return Path.Combine(ResolveAddinFolder(), fileName);
         }
 
         public string ResolveEntityMappingPath() => ResolveResourceFilePath(EntityFileName);
@@ -44,14 +36,14 @@ namespace DfEIfcNamer.Services
 
         public IList<IfcEntityDefinition> LoadEntityLibrary()
         {
-            var json = ReadWithFallback(ResolveEntityMappingPath(), EntityResource);
-            return JsonSerializer.Deserialize<List<IfcEntityDefinition>>(json, JsonOpts) ?? new List<IfcEntityDefinition>();
+            return _resourceLoader.LoadJsonResourceOrFile<List<IfcEntityDefinition>>(EntityFileName, ResolveEntityMappingPath(), JsonOpts)
+                   ?? new List<IfcEntityDefinition>();
         }
 
         public IList<ClassificationSlot> LoadClassificationSlots()
         {
-            var json = ReadWithFallback(ResolveClassificationSlotsPath(), ClassificationResource);
-            return JsonSerializer.Deserialize<List<ClassificationSlot>>(json, JsonOpts) ?? new List<ClassificationSlot>();
+            return _resourceLoader.LoadJsonResourceOrFile<List<ClassificationSlot>>(ClassificationFileName, ResolveClassificationSlotsPath(), JsonOpts)
+                   ?? new List<ClassificationSlot>();
         }
 
         public string LoadDefaultProjectConfig()
@@ -70,32 +62,6 @@ namespace DfEIfcNamer.Services
             }
 
             File.WriteAllText(path, json ?? "{}");
-        }
-
-        private static string ReadWithFallback(string diskPath, string embeddedName)
-        {
-            if (File.Exists(diskPath))
-            {
-                return File.ReadAllText(diskPath);
-            }
-
-            return ReadEmbedded(embeddedName);
-        }
-
-        private static string ReadEmbedded(string name)
-        {
-            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name))
-            {
-                if (stream == null)
-                {
-                    throw new FileNotFoundException("Embedded resource not found: " + name);
-                }
-
-                using (var reader = new StreamReader(stream))
-                {
-                    return reader.ReadToEnd();
-                }
-            }
         }
     }
 }
