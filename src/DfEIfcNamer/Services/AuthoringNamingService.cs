@@ -9,6 +9,7 @@ namespace DfEIfcNamer.Services
 {
     public class AuthoringNamingService
     {
+        private static readonly Regex InvalidIfcNameCharacters = new Regex(@"[^A-Za-z0-9_-]", RegexOptions.Compiled);
         private readonly NamingCodeRegistryService _codeRegistry;
         private readonly SystemRegistryService _systemRegistry;
         private readonly SpaceZoneService _spaceZoneService;
@@ -283,7 +284,7 @@ namespace DfEIfcNamer.Services
             return Regex.Replace(raw ?? fallback, "[^A-Za-z0-9_]", string.Empty);
         }
 
-        private static string Sanitize(string value) => Regex.Replace(value ?? string.Empty, "[^A-Za-z0-9_\-]", string.Empty);
+        private static string Sanitize(string value) => InvalidIfcNameCharacters.Replace(value ?? string.Empty, string.Empty);
 
         private static string AppendStatus(string current, string add)
         {

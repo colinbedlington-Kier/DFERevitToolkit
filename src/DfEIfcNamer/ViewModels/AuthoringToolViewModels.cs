@@ -8,6 +8,7 @@ using Autodesk.Revit.DB;
 using DfEIfcNamer.Commands;
 using DfEIfcNamer.ExternalEvents;
 using DfEIfcNamer.Models;
+using DfEIfcNamer.Services;
 using Microsoft.Win32;
 
 namespace DfEIfcNamer.ViewModels
