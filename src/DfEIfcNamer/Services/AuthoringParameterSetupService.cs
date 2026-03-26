@@ -18,6 +18,7 @@ namespace DfEIfcNamer.Services
         public SetupCheckResult Check(Document doc, IList<ElementId> categoryIds)
         {
             var manifestEntries = ParameterBindingManifest.All();
+            var manifestDiagnostics = ParameterBindingManifest.LastDiagnostics;
             var sharedPath = _parameterService.ResolveSharedParameterFilePath();
             var statusRows = BuildStatusRows(doc, categoryIds, false, new Dictionary<string, ParameterScopeKind>(StringComparer.OrdinalIgnoreCase));
             return new SetupCheckResult
@@ -27,6 +28,9 @@ namespace DfEIfcNamer.Services
                 Parameters = statusRows,
                 ManifestLoaded = manifestEntries.Any(),
                 ManifestEntriesCount = manifestEntries.Count,
+                ManifestTotalRowsCount = manifestDiagnostics.TotalRows,
+                ManifestParsedRowsCount = manifestDiagnostics.ParsedRows,
+                ManifestFailedRowsCount = manifestDiagnostics.FailedRows,
                 SharedParameterFileLoaded = doc.Application.OpenSharedParameterFile() != null,
                 SharedParameterSource = sharedPath,
                 SharedParameterDefinitionsCount = statusRows.Count(x => x.ParameterName != "<row-error>" && x.ParameterName != "<exception>"),
@@ -41,6 +45,7 @@ namespace DfEIfcNamer.Services
         public SetupCheckResult CreateMissing(Document doc, IList<ElementId> categoryIds)
         {
             var manifestEntries = ParameterBindingManifest.All();
+            var manifestDiagnostics = ParameterBindingManifest.LastDiagnostics;
             var sharedPath = _parameterService.ResolveSharedParameterFilePath();
             var overrides = new Dictionary<string, ParameterScopeKind>(StringComparer.OrdinalIgnoreCase);
             var rows = BuildStatusRows(doc, categoryIds, true, overrides);
@@ -51,6 +56,9 @@ namespace DfEIfcNamer.Services
                 Parameters = rows,
                 ManifestLoaded = manifestEntries.Any(),
                 ManifestEntriesCount = manifestEntries.Count,
+                ManifestTotalRowsCount = manifestDiagnostics.TotalRows,
+                ManifestParsedRowsCount = manifestDiagnostics.ParsedRows,
+                ManifestFailedRowsCount = manifestDiagnostics.FailedRows,
                 SharedParameterFileLoaded = doc.Application.OpenSharedParameterFile() != null,
                 SharedParameterSource = sharedPath,
                 SharedParameterDefinitionsCount = rows.Count(x => x.ParameterName != "<row-error>" && x.ParameterName != "<exception>"),
@@ -65,8 +73,9 @@ namespace DfEIfcNamer.Services
         private IList<RequiredParameterStatus> BuildStatusRows(Document doc, IList<ElementId> categoryIds, bool createMissing, IReadOnlyDictionary<string, ParameterScopeKind> scopeOverrides)
         {
             var manifest = ParameterBindingManifest.All();
+            var manifestDiagnostics = ParameterBindingManifest.LastDiagnostics;
             var sharedPath = _parameterService.ResolveSharedParameterFilePath();
-            var rowErrors = new List<string>();
+            var rowErrors = manifestDiagnostics.Errors.ToList();
             if (!ParameterService.EnsureSharedParameterFileConfigured(doc.Application, sharedPath, out var configureError))
             {
                 var failedRows = manifest.Select(m => new RequiredParameterStatus
