@@ -8,6 +8,7 @@ namespace DfEIfcNamer.Services
 {
     public class IfcHeaderService
     {
+        private readonly ProjectParameterWriter _projectWriter = new ProjectParameterWriter();
         private static readonly string[] Required =
         {
             "IfcProjectName", "IfcProjectDescription", "IfcSiteName", "IfcSiteDescription",
@@ -19,12 +20,12 @@ namespace DfEIfcNamer.Services
             var project = doc.ProjectInformation;
             return new HeaderDataModel
             {
-                IfcProjectName = Get(project, "IfcProjectName"),
-                IfcProjectDescription = Get(project, "IfcProjectDescription"),
-                IfcSiteName = Get(project, "IfcSiteName"),
-                IfcSiteDescription = Get(project, "IfcSiteDescription"),
-                IfcBuildingName = Get(project, "IfcBuildingName"),
-                IfcBuildingDescription = Get(project, "IfcBuildingDescription"),
+                IfcProjectName = Get(project, ParameterWriteAliases.IfcProjectName),
+                IfcProjectDescription = Get(project, ParameterWriteAliases.IfcProjectDescription),
+                IfcSiteName = Get(project, ParameterWriteAliases.IfcSiteName),
+                IfcSiteDescription = Get(project, ParameterWriteAliases.IfcSiteDescription),
+                IfcBuildingName = Get(project, ParameterWriteAliases.IfcBuildingName),
+                IfcBuildingDescription = Get(project, ParameterWriteAliases.IfcBuildingDescription),
                 UPRN = Get(project, "UPRN"),
                 MaximumBlockHeight = Get(project, "MaximumBlockHeight")
             };
@@ -56,26 +57,18 @@ namespace DfEIfcNamer.Services
             using (var tx = new Transaction(doc, "DfE IFC Header Data"))
             {
                 tx.Start();
-                var project = doc.ProjectInformation;
                 foreach (var pair in ToPairs(data))
                 {
-                    var p = project.LookupParameter(pair.Key);
-                    if (p == null)
+                    var names = pair.Key.Split('|');
+                    if (_projectWriter.Write(doc, pair.Value, names))
+                    {
+                        result.Updated++;
+                    }
+                    else
                     {
                         result.Skipped++;
-                        result.Logs.Add("Missing project parameter: " + pair.Key);
-                        continue;
+                        result.Logs.Add("Missing/read-only project parameter: " + pair.Key);
                     }
-
-                    if (p.IsReadOnly)
-                    {
-                        result.Skipped++;
-                        result.Logs.Add("Read-only project parameter: " + pair.Key);
-                        continue;
-                    }
-
-                    p.Set(pair.Value ?? string.Empty);
-                    result.Updated++;
                 }
 
                 tx.Commit();
@@ -105,17 +98,25 @@ namespace DfEIfcNamer.Services
         {
             return new Dictionary<string, string>
             {
-                ["IfcProjectName"] = d?.IfcProjectName,
-                ["IfcProjectDescription"] = d?.IfcProjectDescription,
-                ["IfcSiteName"] = d?.IfcSiteName,
-                ["IfcSiteDescription"] = d?.IfcSiteDescription,
-                ["IfcBuildingName"] = d?.IfcBuildingName,
-                ["IfcBuildingDescription"] = d?.IfcBuildingDescription,
+                ["IfcProjectName|Project Name"] = d?.IfcProjectName,
+                ["IfcProjectDescription|Project Description"] = d?.IfcProjectDescription,
+                ["IfcSiteName|Site Name"] = d?.IfcSiteName,
+                ["IfcSiteDescription|Site Description"] = d?.IfcSiteDescription,
+                ["IfcBuildingName|Building Name"] = d?.IfcBuildingName,
+                ["IfcBuildingDescription|Building Description"] = d?.IfcBuildingDescription,
                 ["UPRN"] = d?.UPRN,
                 ["MaximumBlockHeight"] = d?.MaximumBlockHeight
             };
         }
 
-        private static string Get(Element element, string name) => element?.LookupParameter(name)?.AsString() ?? string.Empty;
+        private static string Get(Element element, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                var p = element?.LookupParameter(name);
+                if (p != null) return p.AsString() ?? string.Empty;
+            }
+            return string.Empty;
+        }
     }
 }

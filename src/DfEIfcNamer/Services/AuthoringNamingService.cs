@@ -13,6 +13,8 @@ namespace DfEIfcNamer.Services
         private readonly NamingCodeRegistryService _codeRegistry;
         private readonly SystemRegistryService _systemRegistry;
         private readonly SpaceZoneService _spaceZoneService;
+        private readonly InstanceParameterWriter _instanceWriter = new InstanceParameterWriter();
+        private readonly TypeParameterWriter _typeWriter = new TypeParameterWriter();
 
         public AuthoringNamingService(NamingCodeRegistryService codeRegistry, SystemRegistryService systemRegistry, SpaceZoneService spaceZoneService)
         {
@@ -52,16 +54,24 @@ namespace DfEIfcNamer.Services
                 row.CurrentIfcTypeName = Get(typeElement, "IFCName [Type]", "IFCName[Type]");
 
                 var ifcClass = NormalizeIfcClass(typeElement, row.Category);
-                var predefined = NormalizeToken(Get(element, "DfE_IFCPredefinedType", "IFC Predefined Type"), request.FallbackPredefinedType);
-                var typeIdentityKey = $"{row.TypeElementId}_{ifcClass}_{predefined}";
+                var predefinedRaw = Get(typeElement, "IFC Predefined Type", "DfE_IFCPredefinedType", "IFC_Predefined_Type");
+                var predefinedSchema = NormalizeSchemaToken(predefinedRaw, request.FallbackPredefinedType);
+                var predefinedDisplay = ToPascalCase(predefinedSchema);
+                var predefined = predefinedDisplay;
+                var typeIdentityKey = $"{row.Family}_{row.Type}_{ifcClass}_{predefined}";
                 if (!typeNameByTypeId.TryGetValue(row.TypeElementId, out var proposedTypeName))
                 {
                     if (!typeCounter.ContainsKey(typeIdentityKey)) typeCounter[typeIdentityKey] = 0;
                     typeCounter[typeIdentityKey]++;
-                    proposedTypeName = Sanitize($"{ifcClass}_{predefined}_Type{typeCounter[typeIdentityKey].ToString().PadLeft(request.TypeNumberWidth, '0')}");
+                    var typeSuffix = typeCounter[typeIdentityKey].ToString().PadLeft(request.TypeNumberWidth, '0');
+                    proposedTypeName = string.IsNullOrWhiteSpace(predefinedDisplay) || predefinedDisplay.Equals("Notdefined", StringComparison.OrdinalIgnoreCase)
+                        ? Sanitize($"{ifcClass}_Type{typeSuffix}")
+                        : Sanitize($"{ifcClass}_{predefinedDisplay}_Type{typeSuffix}");
                     typeNameByTypeId[row.TypeElementId] = proposedTypeName;
                 }
                 row.ProposedIfcTypeName = proposedTypeName;
+                row.ProposedIfcExportAs = "Ifc" + ifcClass;
+                row.ProposedIfcPredefinedType = predefinedSchema;
 
                 row.ProposedIfcName = BuildInstanceName(doc, element, ifcClass, predefined, request, instanceCounter, doorRoomCounter, windowRoomCounter, out var status);
                 row.Status = status;
@@ -123,14 +133,15 @@ namespace DfEIfcNamer.Services
 
                         if (applyInstance)
                         {
-                            Set(element, row.ProposedIfcName, "IFCName", "IfcName");
+                            _instanceWriter.Write(element, row.ProposedIfcName, "IFCName", "IfcName");
+                            _instanceWriter.Write(element, row.ProposedIfcName, "IfcName");
                             result.InstancesUpdated++;
                         }
 
                         if (applySystem)
                         {
-                            Set(element, row.ProposedSystemName, "SystemName");
-                            Set(element, row.ProposedSystemDescription, "SystemDescription");
+                            _instanceWriter.Write(element, row.ProposedSystemName, "SystemName");
+                            _instanceWriter.Write(element, row.ProposedSystemDescription, "SystemDescription");
                         }
 
                         if (applyType)
@@ -146,7 +157,12 @@ namespace DfEIfcNamer.Services
 
                             if (typeWriteSet.Add(typeId))
                             {
-                                Set(type, row.ProposedIfcTypeName, "IFCName [Type]", "IFCName[Type]");
+                                _typeWriter.Write(type, row.ProposedIfcTypeName, "IFCName [Type]", "IFCName[Type]");
+                                _typeWriter.Write(type, row.ProposedIfcTypeName, "IfcName[Type]");
+                                _typeWriter.Write(type, row.ProposedIfcExportAs, "IfcExportAs", "IFC Export As");
+                                _typeWriter.Write(type, row.ProposedIfcPredefinedType, "IFC Predefined Type", "DfE_IFCPredefinedType");
+                                _typeWriter.Write(type, row.ProposedIfcPredefinedType, "DfE_IFCPredefinedType");
+                                _typeWriter.Write(type, row.ProposedIfcExportAs?.Replace("Ifc", string.Empty), "DfE_IFCEntity");
                                 result.UniqueTypesUpdated++;
                             }
                         }
@@ -200,9 +216,10 @@ namespace DfEIfcNamer.Services
                 return code + element.Id.Value;
             }
 
-            if (!instanceCounter.ContainsKey(code)) instanceCounter[code] = 0;
-            instanceCounter[code]++;
-            return code + instanceCounter[code].ToString("D4");
+            var counterKey = $"{category}_{ifcClass}";
+            if (!instanceCounter.ContainsKey(counterKey)) instanceCounter[counterKey] = 0;
+            instanceCounter[counterKey]++;
+            return code + instanceCounter[counterKey].ToString("D4");
         }
 
         private string BuildDoorWindowName(Document doc, Element element, string prefix, NamingGenerationRequest req, IDictionary<string, int> counter, out string status)
@@ -290,7 +307,7 @@ namespace DfEIfcNamer.Services
 
         private static string NormalizeIfcClass(ElementType type, string fallbackCategory)
         {
-            var exportAs = Get(type, "IFC Export As");
+            var exportAs = Get(type, "IfcExportAs", "IFC Export As");
             if (!string.IsNullOrWhiteSpace(exportAs))
             {
                 return NormalizeToken(exportAs.Replace("Ifc", string.Empty), "Undefined");
@@ -299,6 +316,19 @@ namespace DfEIfcNamer.Services
             return NormalizeToken(fallbackCategory?.Replace(" ", string.Empty), "Undefined");
         }
 
+
+        private static string NormalizeSchemaToken(string token, string fallback)
+        {
+            var raw = string.IsNullOrWhiteSpace(token) ? fallback : token;
+            return NormalizeToken(raw, fallback).ToUpperInvariant();
+        }
+
+        private static string ToPascalCase(string schemaToken)
+        {
+            if (string.IsNullOrWhiteSpace(schemaToken)) return string.Empty;
+            var parts = schemaToken.Split(new[] { '_', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            return string.Concat(parts.Select(p => p.Substring(0, 1).ToUpperInvariant() + p.Substring(1).ToLowerInvariant()));
+        }
         private static string NormalizeToken(string token, string fallback)
         {
             var raw = string.IsNullOrWhiteSpace(token) ? fallback : token;

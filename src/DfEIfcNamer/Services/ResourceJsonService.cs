@@ -10,9 +10,9 @@ namespace DfEIfcNamer.Services
 {
     public class ResourceJsonService
     {
-        private const string EntityResource = "DfEIfcNamer.Resources.ifc2x3_entity_predefinedtypes.json";
+        private const string EntityResource = "DfEIfcNamer.Resources.DfeIfc2x3Entities.json";
         private const string ClassificationResource = "DfEIfcNamer.Resources.classification_slots.json";
-        private const string EntityFileName = "ifc2x3_entity_predefinedtypes.json";
+        private const string EntityFileName = "DfeIfc2x3Entities.json";
         private const string ClassificationFileName = "classification_slots.json";
         private static readonly JsonSerializerOptions JsonOpts = new()
         {

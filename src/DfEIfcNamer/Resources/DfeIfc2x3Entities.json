@@ -1,0 +1,6 @@
+[
+  { "DisplayName": "Wall", "IFCClassToken": "Wall", "ExportAs": "IfcWall" },
+  { "DisplayName": "Beam", "IFCClassToken": "Beam", "ExportAs": "IfcBeam" },
+  { "DisplayName": "Door", "IFCClassToken": "Door", "ExportAs": "IfcDoor" },
+  { "DisplayName": "Window", "IFCClassToken": "Window", "ExportAs": "IfcWindow" }
+]

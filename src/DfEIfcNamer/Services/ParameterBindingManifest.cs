@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text.Json;
 
 namespace DfEIfcNamer.Services
 {
@@ -16,65 +19,49 @@ namespace DfEIfcNamer.Services
         public string Name { get; set; }
         public ParameterScopeKind Scope { get; set; }
         public bool RequiredForSetupCheck { get; set; }
+        public string Usage { get; set; }
         public string[] Aliases { get; set; } = Array.Empty<string>();
+        public string[] Categories { get; set; } = Array.Empty<string>();
     }
 
     public static class ParameterBindingManifest
     {
-        private static readonly IList<ParameterBindingManifestEntry> Entries = new List<ParameterBindingManifestEntry>
-        {
-            Entry("IFCName", ParameterScopeKind.Instance, true, "IfcName"),
-            Entry("IfcDescription", ParameterScopeKind.Instance, true),
-            Entry("IFCName [Type]", ParameterScopeKind.Type, true, "IFCName[Type]", "IfcName[Type]"),
-            Entry("IfcDescription[Type]", ParameterScopeKind.Type, true),
-            Entry("SystemName", ParameterScopeKind.Instance, true),
-            Entry("SystemDescription", ParameterScopeKind.Instance, true),
-            Entry("SystemCategory", ParameterScopeKind.Instance, true),
-            Entry("ZoneName", ParameterScopeKind.Instance, true),
-            Entry("ZoneDescription", ParameterScopeKind.Instance, true),
-            Entry("ZoneCategory", ParameterScopeKind.Instance, true),
-            Entry("SpaceReference", ParameterScopeKind.Instance, true),
-            Entry("DfE ADS Classification", ParameterScopeKind.Instance, true),
-            Entry("Classification", ParameterScopeKind.Type, true),
-            Entry("Classification(2)", ParameterScopeKind.Type, true),
-            Entry("Classification(3)", ParameterScopeKind.Type, false),
-            Entry("Classification(4)", ParameterScopeKind.Type, false),
-            Entry("Classification(5)", ParameterScopeKind.Type, false),
-            Entry("Classification(6)", ParameterScopeKind.Type, false),
-            Entry("Classification(7)", ParameterScopeKind.Type, false),
-            Entry("Classification(8)", ParameterScopeKind.Type, false),
-            Entry("Classification(9)", ParameterScopeKind.Type, false),
-            Entry("Classification.Uniclass.Pr.Number", ParameterScopeKind.Type, true),
-            Entry("Classification.Uniclass.Pr.Description", ParameterScopeKind.Type, true),
-            Entry("Classification.Uniclass.Ss.Number", ParameterScopeKind.Instance, true),
-            Entry("Classification.Uniclass.Ss.Description", ParameterScopeKind.Instance, true),
-            Entry("IfcProjectName", ParameterScopeKind.Project, true),
-            Entry("IfcProjectDescription", ParameterScopeKind.Project, true),
-            Entry("IfcSiteName", ParameterScopeKind.Project, true),
-            Entry("IfcSiteDescription", ParameterScopeKind.Project, true),
-            Entry("IfcBuildingName", ParameterScopeKind.Project, true),
-            Entry("IfcBuildingDescription", ParameterScopeKind.Project, true),
-            Entry("UPRN", ParameterScopeKind.Project, true),
-            Entry("MaximumBlockHeight", ParameterScopeKind.Project, true),
-            Entry("DfE_ProjectInfoJson", ParameterScopeKind.Project, false),
-            Entry("DfE_NamingCounters", ParameterScopeKind.Project, false),
-            Entry("DfE_IFCPredefinedType", ParameterScopeKind.Instance, false),
-            Entry("DfE_UserDefinedPredefinedTypeValue", ParameterScopeKind.Instance, false),
-            Entry("DfE_IFCEntity", ParameterScopeKind.Instance, false)
-        };
+        private const string ManifestFileName = "DfeParameterBindingManifest.json";
+        private const string EmbeddedManifestResource = "DfEIfcNamer.Resources.DfeParameterBindingManifest.json";
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        private static IList<ParameterBindingManifestEntry> _cache;
 
-        public static IList<ParameterBindingManifestEntry> All() => Entries.ToList();
+        public static IList<ParameterBindingManifestEntry> All()
+        {
+            if (_cache != null) return _cache.ToList();
+            var json = ReadWithFallback();
+            _cache = JsonSerializer.Deserialize<List<ParameterBindingManifestEntry>>(json, JsonOptions) ?? new List<ParameterBindingManifestEntry>();
+            return _cache.ToList();
+        }
 
         public static ParameterBindingManifestEntry FindByName(string parameterName)
         {
-            return Entries.FirstOrDefault(x =>
+            return All().FirstOrDefault(x =>
                 string.Equals(x.Name, parameterName, StringComparison.OrdinalIgnoreCase) ||
                 x.Aliases.Any(a => string.Equals(a, parameterName, StringComparison.OrdinalIgnoreCase)));
         }
 
-        private static ParameterBindingManifestEntry Entry(string name, ParameterScopeKind scope, bool required, params string[] aliases)
+        private static string ReadWithFallback()
         {
-            return new ParameterBindingManifestEntry { Name = name, Scope = scope, RequiredForSetupCheck = required, Aliases = aliases ?? Array.Empty<string>() };
+            var addinFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
+            var resourcesPath = Path.Combine(addinFolder, "Resources", ManifestFileName);
+            var directPath = Path.Combine(addinFolder, ManifestFileName);
+            if (File.Exists(resourcesPath)) return File.ReadAllText(resourcesPath);
+            if (File.Exists(directPath)) return File.ReadAllText(directPath);
+
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(EmbeddedManifestResource))
+            {
+                if (stream == null) throw new FileNotFoundException("Missing embedded manifest resource: " + EmbeddedManifestResource);
+                using (var reader = new StreamReader(stream))
+                {
+                    return reader.ReadToEnd();
+                }
+            }
         }
     }
 }

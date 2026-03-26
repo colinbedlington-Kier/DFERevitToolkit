@@ -1,0 +1,4 @@
+SystemName,SystemDescription,Discipline,AllowedCategories,AllowedIfcClasses
+LTHW-01,Low temperature hot water serving east wing radiators,Mechanical,Pipe Accessories|Pipe Fittings,PipeSegment|PipeFitting|FlowTerminal
+SA-01,Supply air serving level 01,Mechanical,Duct Accessories|Duct Fittings,DuctSegment|DuctFitting|AirTerminal
+ELEC-LTG-01,Lighting circuit system,Electrical,Lighting Fixtures|Electrical Fixtures,

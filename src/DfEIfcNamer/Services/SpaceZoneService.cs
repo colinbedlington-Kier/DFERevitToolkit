@@ -9,8 +9,15 @@ namespace DfEIfcNamer.Services
 {
     public class SpaceZoneService
     {
-        private readonly IList<ZoneCatalogEntry> _zones = BuiltInZoneCatalog.Default();
-        private readonly IList<AdsClassificationEntry> _ads = BuiltInAdsClassificationCatalog.Default();
+        private readonly IList<ZoneCatalogEntry> _zones;
+        private readonly IList<AdsClassificationEntry> _ads;
+        private readonly InstanceParameterWriter _instanceWriter = new InstanceParameterWriter();
+
+        public SpaceZoneService()
+        {
+            _zones = BuiltInZoneCatalog.Default();
+            _ads = BuiltInAdsClassificationCatalog.Default();
+        }
 
         public IList<ZoneCatalogEntry> GetZones() => _zones.ToList();
         public IList<AdsClassificationEntry> GetAdsClassifications() => _ads.ToList();
@@ -47,7 +54,7 @@ namespace DfEIfcNamer.Services
                     CurrentZoneCategory = Get(element, "ZoneCategory"),
                     ProposedZoneCategory = zone?.Category ?? string.Empty,
                     CurrentAdsClassification = Get(element, "DfE ADS Classification"),
-                    ProposedAdsClassification = request?.ProposedAdsClassification ?? string.Empty,
+                    ProposedAdsClassification = FormatAdsClassification(request?.ProposedAdsClassification),
                     Status = string.IsNullOrWhiteSpace(roomNumber) ? "Missing room/space" : "OK"
                 });
             }
@@ -104,9 +111,9 @@ namespace DfEIfcNamer.Services
                     }
 
                     p.Set(row.ProposedZoneName ?? string.Empty);
-                    Set(element, row.ProposedZoneDescription, "ZoneDescription");
-                    Set(element, row.ProposedZoneCategory, "ZoneCategory");
-                    Set(element, row.ProposedAdsClassification, "DfE ADS Classification");
+                    _instanceWriter.Write(element, row.ProposedZoneDescription, "ZoneDescription");
+                    _instanceWriter.Write(element, row.ProposedZoneCategory, "ZoneCategory");
+                    _instanceWriter.Write(element, FormatAdsClassification(row.ProposedAdsClassification), "DfE ADS Classification");
                     result.Updated++;
                 }
 
@@ -162,6 +169,13 @@ namespace DfEIfcNamer.Services
         }
 
         private static string Get(Element element, string parameterName) => element?.LookupParameter(parameterName)?.AsString() ?? string.Empty;
+
+        private static string FormatAdsClassification(string source)
+        {
+            if (string.IsNullOrWhiteSpace(source)) return string.Empty;
+            if (source.StartsWith("[DfE ADS Classification]", StringComparison.OrdinalIgnoreCase)) return source;
+            return "[DfE ADS Classification] " + source.Trim();
+        }
         private static void Set(Element element, string value, string parameterName)
         {
             var p = element?.LookupParameter(parameterName);
