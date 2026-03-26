@@ -41,7 +41,7 @@ namespace DfEIfcNamer.Services
         {
             return All().FirstOrDefault(x =>
                 string.Equals(x.Name, parameterName, StringComparison.OrdinalIgnoreCase) ||
-                x.Aliases.Any(a => string.Equals(a, parameterName, StringComparison.OrdinalIgnoreCase)));
+                (x.Aliases ?? Array.Empty<string>()).Any(a => string.Equals(a, parameterName, StringComparison.OrdinalIgnoreCase)));
         }
     }
 }

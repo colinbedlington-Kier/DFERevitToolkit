@@ -19,6 +19,7 @@ namespace DfEIfcNamer.Services
         private readonly DiagnosticsCollectorService _diagnostics;
         private readonly AuthoringParameterSetupService _setupService;
         private readonly ClassificationSyncService _classificationSync;
+        private readonly IfcDefaultsResolverService _ifcDefaults;
 
         public IfcAuthoringService(
             CobieSyncService cobieSync,
@@ -31,7 +32,8 @@ namespace DfEIfcNamer.Services
             ValidationService validation,
             DiagnosticsCollectorService diagnostics,
             AuthoringParameterSetupService setupService,
-            ClassificationSyncService classificationSync)
+            ClassificationSyncService classificationSync,
+            IfcDefaultsResolverService ifcDefaults)
         {
             _cobieSync = cobieSync;
             _templateConfig = templateConfig;
@@ -44,6 +46,7 @@ namespace DfEIfcNamer.Services
             _diagnostics = diagnostics;
             _setupService = setupService;
             _classificationSync = classificationSync;
+            _ifcDefaults = ifcDefaults;
 
             _codeRegistry.SetEntries(_templateConfig.LoadEmbeddedNamingCodes());
             _systemRegistry.SetEntries(_templateConfig.LoadEmbeddedSystems());
@@ -55,6 +58,8 @@ namespace DfEIfcNamer.Services
             var result = _setupService.Check(doc, categoryIds);
             result.NamingMapLoaded = _codeRegistry.GetEntries().Any();
             result.SystemListLoaded = _systemRegistry.GetEntries().Any();
+            result.NamingCodesSource = _templateConfig.LastNamingCodesSource;
+            result.SystemsSource = _templateConfig.LastSystemsSource;
             result.Notes += $" Naming codes: {_codeRegistry.GetEntries().Count}. Systems: {_systemRegistry.GetEntries().Count}.";
             return result;
         }
@@ -65,6 +70,8 @@ namespace DfEIfcNamer.Services
             var setup = _setupService.CreateMissing(doc, categoryIds);
             setup.NamingMapLoaded = _codeRegistry.GetEntries().Any();
             setup.SystemListLoaded = _systemRegistry.GetEntries().Any();
+            setup.NamingCodesSource = _templateConfig.LastNamingCodesSource;
+            setup.SystemsSource = _templateConfig.LastSystemsSource;
             return setup;
         }
 
@@ -87,7 +94,10 @@ namespace DfEIfcNamer.Services
         public NamingPreviewResult GenerateNamingPreview(Document doc, NamingGenerationRequest request)
         {
             _diagnostics.AddInfo("Authoring.Naming", "Generating naming preview.", new { request.ScopeMode, request.InstanceNumberingMode });
-            return _naming.GeneratePreview(doc, request);
+            var preview = _naming.GeneratePreview(doc, request);
+            preview.Warnings.Add($"Resolved IFC entities: {preview.ResolvedIfcEntityCount}, predefined types: {preview.ResolvedPredefinedTypeCount}, USERDEFINED fallback: {preview.UserDefinedFallbackCount}, unresolved: {preview.UnresolvedCount}.");
+            preview.Warnings.Add($"Predefined catalog source: {_ifcDefaults.PredefinedTypesSource} ({_ifcDefaults.PredefinedTypesSourceDetail}), records: {_ifcDefaults.PredefinedTypesCount}.");
+            return preview;
         }
 
         public ApplyResult ApplyNaming(Document doc, IEnumerable<NamingPreviewRow> rows, bool applyIfcName, bool applyTypeName, bool applySystem)

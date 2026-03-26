@@ -41,6 +41,18 @@ namespace DfEIfcNamer.Models
         public IList<RequiredParameterStatus> Parameters { get; set; } = new List<RequiredParameterStatus>();
         public bool NamingMapLoaded { get; set; }
         public bool SystemListLoaded { get; set; }
+        public string NamingCodesSource { get; set; }
+        public string SystemsSource { get; set; }
+        public string ManifestSource { get; set; }
+        public string SharedParameterSource { get; set; }
+        public bool ManifestLoaded { get; set; }
+        public bool SharedParameterFileLoaded { get; set; }
+        public int ManifestEntriesCount { get; set; }
+        public int SharedParameterDefinitionsCount { get; set; }
+        public int MatchedSharedParameterDefinitionsCount { get; set; }
+        public int ProjectedRowsCount { get; set; }
+        public IList<string> RowLevelErrors { get; set; } = new List<string>();
+        public IList<string> Exceptions { get; set; } = new List<string>();
     }
 
     public class NamingCodeMapEntry
@@ -75,7 +87,9 @@ namespace DfEIfcNamer.Models
         public string ProposedSystemName { get; set; }
         public string ProposedSystemDescription { get; set; }
         public string ProposedIfcExportAs { get; set; }
+        public string ProposedIfcEntity { get; set; }
         public string ProposedIfcPredefinedType { get; set; }
+        public string ProposedUserDefinedPredefinedType { get; set; }
         public string Status { get; set; }
         public bool Eligible { get; set; }
     }
@@ -87,6 +101,10 @@ namespace DfEIfcNamer.Models
         public int EligibleCount { get; set; }
         public int SkippedCount { get; set; }
         public int ErrorCount { get; set; }
+        public int ResolvedIfcEntityCount { get; set; }
+        public int ResolvedPredefinedTypeCount { get; set; }
+        public int UserDefinedFallbackCount { get; set; }
+        public int UnresolvedCount { get; set; }
         public IList<string> Warnings { get; set; } = new List<string>();
     }
 
@@ -176,6 +194,8 @@ namespace DfEIfcNamer.Models
         public string SelectedSystemName { get; set; }
         public bool AllowDoorWindowUnassignedFallback { get; set; }
         public string UnassignedRoomPrefix { get; set; } = "UNASSIGNED";
+        public bool AddAsNewSystem { get; set; } = true;
+        public bool AppendToExistingSystem { get; set; }
     }
 
     public class SpaceZoneRequest

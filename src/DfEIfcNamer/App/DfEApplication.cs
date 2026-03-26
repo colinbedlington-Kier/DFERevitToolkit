@@ -27,12 +27,13 @@ namespace DfEIfcNamer.App
             var namingCodeRegistry = new NamingCodeRegistryService();
             var systemRegistry = new SystemRegistryService();
             var spaceZoneService = new SpaceZoneService();
-            var authoringNamingService = new AuthoringNamingService(namingCodeRegistry, systemRegistry, spaceZoneService);
+            var ifcDefaults = new IfcDefaultsResolverService();
+            var authoringNamingService = new AuthoringNamingService(namingCodeRegistry, systemRegistry, spaceZoneService, ifcDefaults);
             var headerService = new IfcHeaderService();
             var validationService = new ValidationService();
             var setupService = new AuthoringParameterSetupService(parameterService);
             var classificationSyncService = new ClassificationSyncService();
-            var authoringService = new IfcAuthoringService(cobieSyncService, templateConfigService, namingCodeRegistry, systemRegistry, authoringNamingService, headerService, spaceZoneService, validationService, diagnosticsCollector, setupService, classificationSyncService);
+            var authoringService = new IfcAuthoringService(cobieSyncService, templateConfigService, namingCodeRegistry, systemRegistry, authoringNamingService, headerService, spaceZoneService, validationService, diagnosticsCollector, setupService, classificationSyncService, ifcDefaults);
 
             var executionHandler = new RevitExecutionHandler(cobieSyncService, settingsStore, authoringService);
             var externalEvent = ExternalEvent.Create(executionHandler);

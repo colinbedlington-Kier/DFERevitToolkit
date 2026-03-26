@@ -17,24 +17,48 @@ namespace DfEIfcNamer.Services
 
         public SetupCheckResult Check(Document doc, IList<ElementId> categoryIds)
         {
+            var manifestEntries = ParameterBindingManifest.All();
+            var sharedPath = _parameterService.ResolveSharedParameterFilePath();
             var statusRows = BuildStatusRows(doc, categoryIds, false, new Dictionary<string, ParameterScopeKind>(StringComparer.OrdinalIgnoreCase));
             return new SetupCheckResult
             {
                 Status = statusRows.Any(x => !x.Exists || x.Scope != x.ActualScope) ? "Warning" : "Ready",
                 Notes = $"Verified {statusRows.Count} shared parameters across all groups.",
-                Parameters = statusRows
+                Parameters = statusRows,
+                ManifestLoaded = manifestEntries.Any(),
+                ManifestEntriesCount = manifestEntries.Count,
+                SharedParameterFileLoaded = doc.Application.OpenSharedParameterFile() != null,
+                SharedParameterSource = sharedPath,
+                SharedParameterDefinitionsCount = statusRows.Count(x => x.ParameterName != "<row-error>" && x.ParameterName != "<exception>"),
+                MatchedSharedParameterDefinitionsCount = statusRows.Count(x => x.FoundInSharedParameterFile),
+                ProjectedRowsCount = statusRows.Count,
+                RowLevelErrors = statusRows.Where(x => x.ParameterName == "<row-error>").Select(x => x.Notes).ToList(),
+                Exceptions = statusRows.Where(x => x.ParameterName == "<exception>").Select(x => x.Notes).ToList(),
+                ManifestSource = "embedded"
             };
         }
 
         public SetupCheckResult CreateMissing(Document doc, IList<ElementId> categoryIds)
         {
+            var manifestEntries = ParameterBindingManifest.All();
+            var sharedPath = _parameterService.ResolveSharedParameterFilePath();
             var overrides = new Dictionary<string, ParameterScopeKind>(StringComparer.OrdinalIgnoreCase);
             var rows = BuildStatusRows(doc, categoryIds, true, overrides);
             return new SetupCheckResult
             {
                 Status = rows.Any(x => !x.Exists) ? "Warning" : "Ready",
                 Notes = $"Create/bind attempted for {rows.Count} parameters resolved from shared file + manifest.",
-                Parameters = rows
+                Parameters = rows,
+                ManifestLoaded = manifestEntries.Any(),
+                ManifestEntriesCount = manifestEntries.Count,
+                SharedParameterFileLoaded = doc.Application.OpenSharedParameterFile() != null,
+                SharedParameterSource = sharedPath,
+                SharedParameterDefinitionsCount = rows.Count(x => x.ParameterName != "<row-error>" && x.ParameterName != "<exception>"),
+                MatchedSharedParameterDefinitionsCount = rows.Count(x => x.FoundInSharedParameterFile),
+                ProjectedRowsCount = rows.Count,
+                RowLevelErrors = rows.Where(x => x.ParameterName == "<row-error>").Select(x => x.Notes).ToList(),
+                Exceptions = rows.Where(x => x.ParameterName == "<exception>").Select(x => x.Notes).ToList(),
+                ManifestSource = "embedded"
             };
         }
 
@@ -42,9 +66,10 @@ namespace DfEIfcNamer.Services
         {
             var manifest = ParameterBindingManifest.All();
             var sharedPath = _parameterService.ResolveSharedParameterFilePath();
+            var rowErrors = new List<string>();
             if (!ParameterService.EnsureSharedParameterFileConfigured(doc.Application, sharedPath, out var configureError))
             {
-                return manifest.Select(m => new RequiredParameterStatus
+                var failedRows = manifest.Select(m => new RequiredParameterStatus
                 {
                     ParameterName = m.Name,
                     Scope = m.Scope.ToString(),
@@ -55,6 +80,8 @@ namespace DfEIfcNamer.Services
                     Action = "skip",
                     Notes = configureError
                 }).ToList();
+                StampDiagnostics(failedRows, manifest, 0, 0, sharedPath, false, rowErrors, new[] { configureError });
+                return failedRows;
             }
 
             var sharedFile = doc.Application.OpenSharedParameterFile();
@@ -63,7 +90,20 @@ namespace DfEIfcNamer.Services
             {
                 foreach (var definition in group.Definitions.Cast<Definition>())
                 {
-                    if (!grouped.ContainsKey(definition.Name)) grouped[definition.Name] = (definition, group.Name);
+                    try
+                    {
+                        if (definition == null || string.IsNullOrWhiteSpace(definition.Name))
+                        {
+                            rowErrors.Add($"Shared parameter row skipped due to missing definition metadata in group '{group?.Name ?? "<null>"}'.");
+                            continue;
+                        }
+
+                        if (!grouped.ContainsKey(definition.Name)) grouped[definition.Name] = (definition, group?.Name ?? string.Empty);
+                    }
+                    catch (Exception ex)
+                    {
+                        rowErrors.Add($"Shared parameter parse failure in group '{group?.Name ?? "<null>"}': {ex.Message}");
+                    }
                 }
             }
 
@@ -92,7 +132,7 @@ namespace DfEIfcNamer.Services
                 foreach (var sharedName in sharedNames)
                 {
                     var entry = ParameterBindingManifest.FindByName(sharedName);
-                    var aliases = new[] { sharedName }.Concat(entry?.Aliases ?? Array.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                    var aliases = new[] { sharedName }.Concat((entry?.Aliases ?? Array.Empty<string>()).Where(a => !string.IsNullOrWhiteSpace(a))).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                     grouped.TryGetValue(sharedName, out var sharedMatch);
                     var expectedScope = scopeOverrides != null && scopeOverrides.TryGetValue(sharedName, out var overrideScope)
                         ? overrideScope
@@ -125,6 +165,7 @@ namespace DfEIfcNamer.Services
                         {
                             result = "Failed";
                             notes = ex.Message;
+                            rowErrors.Add($"Binding failure for '{sharedName}': {ex.Message}");
                         }
                     }
 
@@ -147,7 +188,50 @@ namespace DfEIfcNamer.Services
                 tx?.Commit();
             }
 
-            return rows.OrderBy(r => r.ParameterName).ToList();
+            var ordered = rows.OrderBy(r => r.ParameterName).ToList();
+            StampDiagnostics(ordered, manifest, grouped.Count, ordered.Count(x => x.FoundInSharedParameterFile), sharedPath, sharedFile != null, rowErrors, Array.Empty<string>());
+            return ordered;
+        }
+
+        private static void StampDiagnostics(
+            IList<RequiredParameterStatus> rows,
+            IList<ParameterBindingManifestEntry> manifest,
+            int sharedDefinitionCount,
+            int matchedCount,
+            string sharedPath,
+            bool sharedLoaded,
+            IList<string> rowErrors,
+            IEnumerable<string> exceptions)
+        {
+            var header = $"ManifestEntries={manifest?.Count ?? 0}; SharedDefs={sharedDefinitionCount}; Matched={matchedCount}; ProjectedRows={rows?.Count ?? 0}; SharedFileLoaded={sharedLoaded}; SharedPath={sharedPath}";
+            if (rows != null && rows.Count > 0)
+            {
+                rows[0].Notes = string.IsNullOrWhiteSpace(rows[0].Notes) ? header : rows[0].Notes + " | " + header;
+            }
+
+            foreach (var e in rowErrors ?? Enumerable.Empty<string>())
+            {
+                rows?.Add(new RequiredParameterStatus
+                {
+                    ParameterName = "<row-error>",
+                    Scope = "n/a",
+                    Result = "Failed",
+                    Notes = e,
+                    Action = "skip"
+                });
+            }
+
+            foreach (var ex in exceptions ?? Enumerable.Empty<string>())
+            {
+                rows?.Add(new RequiredParameterStatus
+                {
+                    ParameterName = "<exception>",
+                    Scope = "n/a",
+                    Result = "Failed",
+                    Notes = ex,
+                    Action = "skip"
+                });
+            }
         }
 
         private static IList<Category> ResolveCategories(Document doc, IList<ElementId> categoryIds)

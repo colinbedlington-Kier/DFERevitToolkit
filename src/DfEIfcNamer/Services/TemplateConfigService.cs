@@ -12,14 +12,20 @@ namespace DfEIfcNamer.Services
         private const string NamingFileName = "default_naming_codes.json";
         private const string SystemsFileName = "DfeSystemCatalog.csv";
         private readonly ResourceFileLoader _resourceLoader = new ResourceFileLoader();
+        public string LastNamingCodesSource { get; private set; } = "embedded";
+        public string LastSystemsSource { get; private set; } = "embedded";
 
         public IList<NamingCodeMapEntry> LoadEmbeddedNamingCodes()
         {
+            var externalPath = _resourceLoader.ResolveExternalResourcePath(NamingFileName);
+            LastNamingCodesSource = File.Exists(externalPath) ? $"external:{externalPath}" : $"embedded:{_resourceLoader.ResolveEmbeddedResourceName(NamingFileName)}";
             return _resourceLoader.LoadJsonResourceOrFile<List<NamingCodeMapEntry>>(NamingFileName, null, JsonOptions()) ?? new List<NamingCodeMapEntry>();
         }
 
         public IList<SystemRegistryEntry> LoadEmbeddedSystems()
         {
+            var externalPath = _resourceLoader.ResolveExternalResourcePath(SystemsFileName);
+            LastSystemsSource = File.Exists(externalPath) ? $"external:{externalPath}" : $"embedded:{_resourceLoader.ResolveEmbeddedResourceName(SystemsFileName)}";
             var csvLines = _resourceLoader.LoadCsvResourceOrFile(SystemsFileName);
             return ParseSystemsCsv(csvLines);
         }
@@ -27,6 +33,7 @@ namespace DfEIfcNamer.Services
         public IList<NamingCodeMapEntry> LoadNamingCodesFromPath(string path)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return new List<NamingCodeMapEntry>();
+            LastNamingCodesSource = "override:" + path;
             if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
             {
                 return ParseNamingCsv(File.ReadAllLines(path));
@@ -38,6 +45,7 @@ namespace DfEIfcNamer.Services
         public IList<SystemRegistryEntry> LoadSystemsFromPath(string path)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return new List<SystemRegistryEntry>();
+            LastSystemsSource = "override:" + path;
             if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
             {
                 return ParseSystemsCsv(File.ReadAllLines(path));

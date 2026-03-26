@@ -23,6 +23,7 @@
                         <Button Content="Load Naming Code Map" Margin="0,0,8,8" Command="{Binding Setup.LoadNamingCodeMapCommand}"/>
                         <Button Content="Load System List" Margin="0,0,8,8" Command="{Binding Setup.LoadSystemListCommand}"/>
                         <Button Content="Export Setup Report" Margin="0,0,8,8" Command="{Binding Setup.ExportSetupReportCommand}"/>
+                        <Button Content="Copy Debug Report" Margin="0,0,8,8" Command="{Binding Setup.CopyDebugReportCommand}"/>
                     </WrapPanel>
                     <StackPanel Grid.Row="1" Orientation="Vertical" Margin="0,0,0,8">
                         <TextBlock Text="{Binding Setup.Status}" FontWeight="Bold"/>
@@ -43,6 +44,12 @@
                         </DataGrid.Columns>
                     </DataGrid>
                     <ListBox Grid.Row="3" ItemsSource="{Binding Setup.Log}"/>
+                    <GroupBox Grid.Row="3" Header="Debug / Diagnostics" Margin="420,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Setup.DebugStatus}" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <ListBox ItemsSource="{Binding Setup.DebugLines}"/>
+                        </StackPanel>
+                    </GroupBox>
                 </Grid>
             </TabItem>
 
@@ -61,6 +68,8 @@
                         <ComboBox Width="160" ItemsSource="{Binding Naming.NumberingModes}" SelectedItem="{Binding Naming.NumberingMode}" Margin="0,0,8,8"/>
                         <TextBlock Text="System" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <ComboBox Width="220" DisplayMemberPath="SystemName" SelectedValuePath="SystemName" ItemsSource="{Binding Naming.Systems}" SelectedValue="{Binding Naming.SelectedSystemName}" Margin="0,0,8,8"/>
+                        <CheckBox Content="Add as new system" IsChecked="{Binding Naming.AddAsNewSystem}" Margin="0,0,8,8"/>
+                        <CheckBox Content="Append to existing" IsChecked="{Binding Naming.AppendToExistingSystem}" Margin="0,0,8,8"/>
                         <CheckBox Content="Use fallback code" IsChecked="{Binding Naming.UseFallbackCode}" Margin="0,0,8,8"/>
                         <TextBox Width="70" Text="{Binding Naming.FallbackCode}" Margin="0,0,8,8"/>
                         <CheckBox Content="Allow door/window unassigned fallback" IsChecked="{Binding Naming.AllowDoorWindowUnassignedFallback}"/>
@@ -85,6 +94,9 @@
                             <DataGridTextColumn Header="Proposed IFCName" Binding="{Binding ProposedIfcName}" Width="120"/>
                             <DataGridTextColumn Header="Current IFCName[Type]" Binding="{Binding CurrentIfcTypeName}" Width="120"/>
                             <DataGridTextColumn Header="Proposed IFCName[Type]" Binding="{Binding ProposedIfcTypeName}" Width="140"/>
+                            <DataGridTextColumn Header="Proposed IFC Entity" Binding="{Binding ProposedIfcEntity}" Width="120"/>
+                            <DataGridTextColumn Header="Proposed IFC Predefined Type" Binding="{Binding ProposedIfcPredefinedType}" Width="150"/>
+                            <DataGridTextColumn Header="User Defined PT Value" Binding="{Binding ProposedUserDefinedPredefinedType}" Width="140"/>
                             <DataGridTextColumn Header="Current System" Binding="{Binding CurrentSystemName}" Width="110"/>
                             <DataGridTextColumn Header="Proposed System" Binding="{Binding ProposedSystemName}" Width="110"/>
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="160"/>
