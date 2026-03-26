@@ -1436,6 +1436,8 @@ namespace DfEIfcNamer.Services
             }
         }
 
+        private delegate void RuleCounter(string rule, int updated = 0, int skipped = 0, int failed = 0);
+
         private static void ApplyCopyRule(
             Element element,
             string ruleName,
@@ -1443,7 +1445,7 @@ namespace DfEIfcNamer.Services
             string[] targetAliases,
             bool isType,
             ref SyncResult result,
-            Action<string, int, int, int> counter)
+            RuleCounter counter)
         {
             var source = LookupParameter(element, sourceAliases);
             var target = LookupParameter(element, targetAliases);
@@ -1482,7 +1484,7 @@ namespace DfEIfcNamer.Services
             string[] sourceDescriptionAliases,
             string[] targetAliases,
             ref SyncResult result,
-            Action<string, int, int, int> counter)
+            RuleCounter counter)
         {
             var sourceNumber = LookupParameter(element, sourceNumberAliases)?.AsString();
             var sourceDescription = LookupParameter(element, sourceDescriptionAliases)?.AsString();
