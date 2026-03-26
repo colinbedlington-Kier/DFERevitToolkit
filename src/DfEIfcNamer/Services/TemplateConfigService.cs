@@ -11,7 +11,7 @@ namespace DfEIfcNamer.Services
     public class TemplateConfigService
     {
         private const string NamingResource = "DfEIfcNamer.Resources.default_naming_codes.json";
-        private const string SystemsResource = "DfEIfcNamer.Resources.default_systems.json";
+        private const string SystemsResource = "DfEIfcNamer.Resources.DfeSystemCatalog.csv";
 
         public IList<NamingCodeMapEntry> LoadEmbeddedNamingCodes()
         {
@@ -21,8 +21,8 @@ namespace DfEIfcNamer.Services
 
         public IList<SystemRegistryEntry> LoadEmbeddedSystems()
         {
-            var json = ReadEmbedded(SystemsResource);
-            return JsonSerializer.Deserialize<List<SystemRegistryEntry>>(json, JsonOptions()) ?? new List<SystemRegistryEntry>();
+            var csv = ReadEmbedded(SystemsResource);
+            return ParseSystemsCsv(csv.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None));
         }
 
         public IList<NamingCodeMapEntry> LoadNamingCodesFromPath(string path)
@@ -104,7 +104,9 @@ namespace DfEIfcNamer.Services
                 {
                     SystemName = parts[0].Trim(),
                     SystemDescription = parts[1].Trim(),
-                    Discipline = parts.Length >= 3 ? parts[2].Trim() : string.Empty
+                    Discipline = parts.Length >= 3 ? parts[2].Trim() : string.Empty,
+                    AllowedCategories = parts.Length >= 4 ? parts[3].Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList() : new List<string>(),
+                    AllowedIfcClasses = parts.Length >= 5 ? parts[4].Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList() : new List<string>()
                 })
                 .ToList();
         }

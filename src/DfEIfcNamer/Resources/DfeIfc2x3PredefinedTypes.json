@@ -1,0 +1,9 @@
+[
+  { "Entity": "Wall", "Value": "NOTDEFINED" },
+  { "Entity": "Wall", "Value": "MOVABLE" },
+  { "Entity": "Beam", "Value": "BEAM" },
+  { "Entity": "Beam", "Value": "USERDEFINED" },
+  { "Entity": "Door", "Value": "DOOR" },
+  { "Entity": "Door", "Value": "USERDEFINED" },
+  { "Entity": "Window", "Value": "WINDOW" }
+]

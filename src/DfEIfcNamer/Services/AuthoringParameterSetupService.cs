@@ -17,33 +17,34 @@ namespace DfEIfcNamer.Services
 
         public SetupCheckResult Check(Document doc, IList<ElementId> categoryIds)
         {
-            var statusRows = BuildStatusRows(doc, categoryIds, createMissing: false);
-            var result = new SetupCheckResult
+            var statusRows = BuildStatusRows(doc, categoryIds, false, new Dictionary<string, ParameterScopeKind>(StringComparer.OrdinalIgnoreCase));
+            return new SetupCheckResult
             {
                 Status = statusRows.Any(x => !x.Exists || x.Scope != x.ActualScope) ? "Warning" : "Ready",
-                Notes = $"Verified {statusRows.Count} parameters using manifest + shared parameter file.",
+                Notes = $"Verified {statusRows.Count} shared parameters across all groups.",
                 Parameters = statusRows
             };
-            return result;
         }
 
         public SetupCheckResult CreateMissing(Document doc, IList<ElementId> categoryIds)
         {
-            var rows = BuildStatusRows(doc, categoryIds, createMissing: true);
+            var overrides = new Dictionary<string, ParameterScopeKind>(StringComparer.OrdinalIgnoreCase);
+            var rows = BuildStatusRows(doc, categoryIds, true, overrides);
             return new SetupCheckResult
             {
                 Status = rows.Any(x => !x.Exists) ? "Warning" : "Ready",
-                Notes = $"Create/bind attempted for {rows.Count} manifest parameters.",
+                Notes = $"Create/bind attempted for {rows.Count} parameters resolved from shared file + manifest.",
                 Parameters = rows
             };
         }
 
-        private IList<RequiredParameterStatus> BuildStatusRows(Document doc, IList<ElementId> categoryIds, bool createMissing)
+        private IList<RequiredParameterStatus> BuildStatusRows(Document doc, IList<ElementId> categoryIds, bool createMissing, IReadOnlyDictionary<string, ParameterScopeKind> scopeOverrides)
         {
+            var manifest = ParameterBindingManifest.All();
             var sharedPath = _parameterService.ResolveSharedParameterFilePath();
             if (!ParameterService.EnsureSharedParameterFileConfigured(doc.Application, sharedPath, out var configureError))
             {
-                return ParameterBindingManifest.All().Select(m => new RequiredParameterStatus
+                return manifest.Select(m => new RequiredParameterStatus
                 {
                     ParameterName = m.Name,
                     Scope = m.Scope.ToString(),
@@ -51,6 +52,7 @@ namespace DfEIfcNamer.Services
                     Writable = false,
                     FoundInSharedParameterFile = false,
                     Result = "Failed",
+                    Action = "skip",
                     Notes = configureError
                 }).ToList();
             }
@@ -61,10 +63,7 @@ namespace DfEIfcNamer.Services
             {
                 foreach (var definition in group.Definitions.Cast<Definition>())
                 {
-                    if (!grouped.ContainsKey(definition.Name))
-                    {
-                        grouped[definition.Name] = (definition, group.Name);
-                    }
+                    if (!grouped.ContainsKey(definition.Name)) grouped[definition.Name] = (definition, group.Name);
                 }
             }
 
@@ -75,7 +74,6 @@ namespace DfEIfcNamer.Services
             var projectInfoCat = Category.GetCategory(doc, BuiltInCategory.OST_ProjectInformation);
             if (projectInfoCat != null) projectCategorySet.Insert(projectInfoCat);
 
-            var rows = new List<RequiredParameterStatus>();
             var bindingMap = doc.ParameterBindings;
             var iterator = bindingMap.ForwardIterator();
             var bindings = new Dictionary<string, Binding>(StringComparer.OrdinalIgnoreCase);
@@ -86,36 +84,41 @@ namespace DfEIfcNamer.Services
                 if (definition != null && binding != null && !bindings.ContainsKey(definition.Name)) bindings.Add(definition.Name, binding);
             }
 
+            var sharedNames = grouped.Keys.ToList();
+            var rows = new List<RequiredParameterStatus>();
             using (var tx = createMissing ? new Transaction(doc, "DfE Create Authoring Parameters") : null)
             {
-                if (tx != null) tx.Start();
-                foreach (var manifest in ParameterBindingManifest.All())
+                tx?.Start();
+                foreach (var sharedName in sharedNames)
                 {
-                    var aliases = new[] { manifest.Name }.Concat(manifest.Aliases ?? Array.Empty<string>()).ToList();
-                    var match = aliases.FirstOrDefault(grouped.ContainsKey);
-                    grouped.TryGetValue(match ?? string.Empty, out var sharedMatch);
-                    var expected = manifest.Scope.ToString();
-                    var existingParam = ResolveParameter(doc, aliases, manifest.Scope);
-                    var actualScope = ResolveActualScope(bindings, aliases, existingParam, manifest.Scope);
+                    var entry = ParameterBindingManifest.FindByName(sharedName);
+                    var aliases = new[] { sharedName }.Concat(entry?.Aliases ?? Array.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                    grouped.TryGetValue(sharedName, out var sharedMatch);
+                    var expectedScope = scopeOverrides != null && scopeOverrides.TryGetValue(sharedName, out var overrideScope)
+                        ? overrideScope
+                        : entry?.Scope ?? ParameterScopeKind.Instance;
+
+                    var existingParam = ResolveParameter(doc, aliases, expectedScope);
+                    var actualScope = ResolveActualScope(bindings, aliases, existingParam, expectedScope);
                     var exists = existingParam != null;
-                    var writable = existingParam != null && !existingParam.IsReadOnly;
-                    var result = exists ? "Verified" : "Missing";
+                    var mismatch = exists && actualScope != expectedScope.ToString() && actualScope != "Unknown";
+                    var action = !exists ? "create" : mismatch ? "replace" : "skip";
+                    var result = exists ? (mismatch ? "ScopeMismatch" : "Verified") : "Missing";
                     var notes = exists ? "Bound." : "Not bound.";
 
-                    if (createMissing && !exists && sharedMatch.Definition != null)
+                    if (createMissing && (!exists || mismatch) && sharedMatch.Definition != null)
                     {
                         try
                         {
-                            Binding binding = manifest.Scope == ParameterScopeKind.Type
+                            Binding binding = expectedScope == ParameterScopeKind.Type
                                 ? (Binding)doc.Application.Create.NewTypeBinding(modelCategorySet)
-                                : doc.Application.Create.NewInstanceBinding(manifest.Scope == ParameterScopeKind.Project ? projectCategorySet : modelCategorySet);
-                            var groupType = manifest.Scope == ParameterScopeKind.Project ? GroupTypeId.Data : GroupTypeId.Ifc;
+                                : doc.Application.Create.NewInstanceBinding(expectedScope == ParameterScopeKind.Project ? projectCategorySet : modelCategorySet);
+                            var groupType = expectedScope == ParameterScopeKind.Project ? GroupTypeId.Data : GroupTypeId.Ifc;
                             var inserted = doc.ParameterBindings.Insert(sharedMatch.Definition, binding, groupType);
                             if (!inserted) inserted = doc.ParameterBindings.ReInsert(sharedMatch.Definition, binding, groupType);
-                            existingParam = ResolveParameter(doc, aliases, manifest.Scope);
+                            existingParam = ResolveParameter(doc, aliases, expectedScope);
                             exists = existingParam != null;
-                            writable = exists && !existingParam.IsReadOnly;
-                            result = inserted && exists ? "Created" : "Failed";
+                            result = inserted && exists ? (mismatch ? "Replaced" : "Created") : "Failed";
                             notes = inserted ? "Insert/ReInsert executed." : "Revit binding API returned false.";
                         }
                         catch (Exception ex)
@@ -127,21 +130,24 @@ namespace DfEIfcNamer.Services
 
                     rows.Add(new RequiredParameterStatus
                     {
-                        ParameterName = manifest.Name,
-                        Scope = expected,
+                        ParameterName = sharedName,
+                        Scope = expectedScope.ToString(),
                         Exists = exists,
-                        Writable = writable,
-                        FoundInSharedParameterFile = sharedMatch.Definition != null,
+                        Writable = exists && !existingParam.IsReadOnly,
+                        FoundInSharedParameterFile = true,
                         SharedParameterGroup = sharedMatch.Group,
                         ActualScope = actualScope,
+                        Action = action,
+                        Usage = entry?.Usage ?? "Unmapped",
+                        ExpectedCategories = entry?.Categories == null ? "*" : string.Join(",", entry.Categories),
                         Result = result,
                         Notes = notes
                     });
                 }
-                if (tx != null) tx.Commit();
+                tx?.Commit();
             }
 
-            return rows;
+            return rows.OrderBy(r => r.ParameterName).ToList();
         }
 
         private static IList<Category> ResolveCategories(Document doc, IList<ElementId> categoryIds)
@@ -193,10 +199,7 @@ namespace DfEIfcNamer.Services
             if (expected == ParameterScopeKind.Project && existingParam != null) return ParameterScopeKind.Project.ToString();
             foreach (var alias in aliases)
             {
-                if (bindings.TryGetValue(alias, out var binding))
-                {
-                    return binding is TypeBinding ? ParameterScopeKind.Type.ToString() : ParameterScopeKind.Instance.ToString();
-                }
+                if (bindings.TryGetValue(alias, out var binding)) return binding is TypeBinding ? ParameterScopeKind.Type.ToString() : ParameterScopeKind.Instance.ToString();
             }
 
             return existingParam == null ? "Missing" : "Unknown";

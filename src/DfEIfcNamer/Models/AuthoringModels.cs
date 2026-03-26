@@ -28,6 +28,9 @@ namespace DfEIfcNamer.Models
         public string SharedParameterGroup { get; set; }
         public string ActualScope { get; set; }
         public string Result { get; set; }
+        public string Action { get; set; }
+        public string ExpectedCategories { get; set; }
+        public string Usage { get; set; }
         public string Notes { get; set; }
     }
 
@@ -71,6 +74,8 @@ namespace DfEIfcNamer.Models
         public string CurrentSystemName { get; set; }
         public string ProposedSystemName { get; set; }
         public string ProposedSystemDescription { get; set; }
+        public string ProposedIfcExportAs { get; set; }
+        public string ProposedIfcPredefinedType { get; set; }
         public string Status { get; set; }
         public bool Eligible { get; set; }
     }
@@ -202,6 +207,12 @@ namespace DfEIfcNamer.Models
         public string Category { get; set; }
         public string SourceClassification { get; set; }
         public string SourceClassification2 { get; set; }
+        public string SourcePrNumber { get; set; }
+        public string SourcePrDescription { get; set; }
+        public string SourceSsNumber { get; set; }
+        public string SourceSsDescription { get; set; }
+        public string ProposedClassification2 { get; set; }
+        public string ProposedClassification3 { get; set; }
         public string ProposedPrNumber { get; set; }
         public string ProposedPrDescription { get; set; }
         public string ProposedSsNumber { get; set; }
