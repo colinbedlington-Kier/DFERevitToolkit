@@ -857,9 +857,22 @@ namespace DfEIfcNamer.Services
                 .WhereElementIsNotElementType()
                 .Where(e => e.Category != null && categorySet.Contains(e.Category.Id.Value))
                 .ToList();
-            var types = new FilteredElementCollector(doc)
+            var uniqueTypeIds = new HashSet<long>(
+                instances
+                    .Select(x => x.GetTypeId().Value)
+                    .Where(x => x > 0));
+            foreach (var explicitType in new FilteredElementCollector(doc)
                 .WhereElementIsElementType()
-                .Where(e => e.Category != null && categorySet.Contains(e.Category.Id.Value))
+                .Where(e => e.Category != null && categorySet.Contains(e.Category.Id.Value)))
+            {
+                uniqueTypeIds.Add(explicitType.Id.Value);
+            }
+            var types = uniqueTypeIds
+                .Select(id => doc.GetElement(new ElementId(id)))
+                .Where(e => e != null)
+                .OrderBy(e => e.Category?.Name ?? string.Empty)
+                .ThenBy(e => (e as ElementType)?.FamilyName ?? string.Empty)
+                .ThenBy(e => e.Name)
                 .ToList();
 
             var ruleStats = new Dictionary<string, (int Updated, int Skipped, int Failed)>();
@@ -906,6 +919,11 @@ namespace DfEIfcNamer.Services
                     Message = $"{kvp.Key}: updated={kvp.Value.Updated}, skipped={kvp.Value.Skipped}, failed={kvp.Value.Failed}"
                 });
             }
+            result.Logs.Add(new SyncLogEntry
+            {
+                Severity = "Info",
+                Message = $"COBie type sync diagnostics: candidate instances={instances.Count}, unique type targets={types.Count}."
+            });
 
             return result;
         }

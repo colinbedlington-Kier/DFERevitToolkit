@@ -30,7 +30,21 @@ namespace DfEIfcNamer.Services
             var result = new NamingPreviewResult();
             var elements = ResolveScope(doc, request);
             result.SelectedCount = elements.Count;
-            var sorted = elements.OrderBy(e => e.Id.Value).ToList();
+            var sorted = elements
+                .OrderBy(e => e.Category?.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e =>
+                {
+                    var t = doc.GetElement(e.GetTypeId()) as ElementType;
+                    return t?.FamilyName ?? string.Empty;
+                }, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e =>
+                {
+                    var t = doc.GetElement(e.GetTypeId()) as ElementType;
+                    return t?.Name ?? string.Empty;
+                }, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e => e.GetTypeId().Value)
+                .ThenBy(e => e.Id.Value)
+                .ToList();
 
             var typeCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var typeNameByTypeId = new Dictionary<long, string>();
@@ -38,6 +52,51 @@ namespace DfEIfcNamer.Services
             var doorRoomCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var windowRoomCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var systemCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var typeDescriptors = new Dictionary<long, (string Category, string Family, string Type, string IfcClass, string PredefinedDisplay, string PredefinedSchema, string UserDefined)>();
+
+            foreach (var element in sorted)
+            {
+                var typeElement = doc.GetElement(element.GetTypeId()) as ElementType;
+                var typeId = typeElement?.Id?.Value ?? -1;
+                if (typeId <= 0 || typeDescriptors.ContainsKey(typeId))
+                {
+                    continue;
+                }
+
+                var category = element.Category?.Name ?? string.Empty;
+                var family = typeElement?.FamilyName ?? string.Empty;
+                var type = typeElement?.Name ?? string.Empty;
+                var resolved = _ifcDefaults.ResolveDefaults(category, family, type);
+                var ifcClass = NormalizeIfcClass(typeElement, category, resolved.Entity);
+                var predefinedRaw = Get(typeElement, "IFC Predefined Type", "DfE_IFCPredefinedType", "IFC_Predefined_Type");
+                var resolvedRaw = string.IsNullOrWhiteSpace(predefinedRaw) ? resolved.PredefinedType : predefinedRaw;
+                var predefinedSchema = NormalizeSchemaToken(resolvedRaw, request.FallbackPredefinedType);
+                var predefinedDisplay = ToPascalCase(predefinedSchema);
+                var userDefined = predefinedSchema == "USERDEFINED" ? (resolved.UserDefinedValue ?? string.Empty) : string.Empty;
+                typeDescriptors[typeId] = (category, family, type, ifcClass, predefinedDisplay, predefinedSchema, userDefined);
+            }
+
+            foreach (var descriptor in typeDescriptors
+                .OrderBy(x => x.Value.Category, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.Value.Family, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.Value.Type, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.Key))
+            {
+                var typeId = descriptor.Key;
+                var value = descriptor.Value;
+                var bucket = $"{value.Category}_{value.IfcClass}_{value.PredefinedDisplay}";
+                if (!typeCounter.ContainsKey(bucket))
+                {
+                    typeCounter[bucket] = 0;
+                }
+
+                typeCounter[bucket]++;
+                var typeSuffix = typeCounter[bucket].ToString().PadLeft(request.TypeNumberWidth, '0');
+                var proposedTypeName = string.IsNullOrWhiteSpace(value.PredefinedDisplay) || value.PredefinedDisplay.Equals("Notdefined", StringComparison.OrdinalIgnoreCase)
+                    ? Sanitize($"{value.IfcClass}_Type{typeSuffix}")
+                    : Sanitize($"{value.IfcClass}_{value.PredefinedDisplay}_Type{typeSuffix}");
+                typeNameByTypeId[typeId] = proposedTypeName;
+            }
 
             foreach (var element in sorted)
             {
@@ -57,28 +116,18 @@ namespace DfEIfcNamer.Services
                 row.CurrentIfcTypeName = Get(typeElement, "IFCName [Type]", "IFCName[Type]");
 
                 var resolved = _ifcDefaults.ResolveDefaults(row.Category, row.Family, row.Type);
-                var ifcClass = NormalizeIfcClass(typeElement, row.Category, resolved.Entity);
-                var predefinedRaw = Get(typeElement, "IFC Predefined Type", "DfE_IFCPredefinedType", "IFC_Predefined_Type");
-                var resolvedRaw = string.IsNullOrWhiteSpace(predefinedRaw) ? resolved.PredefinedType : predefinedRaw;
-                var predefinedSchema = NormalizeSchemaToken(resolvedRaw, request.FallbackPredefinedType);
-                var predefinedDisplay = ToPascalCase(predefinedSchema);
-                var predefined = predefinedDisplay;
-                var typeIdentityKey = $"{row.Family}_{row.Type}_{ifcClass}_{predefined}";
-                if (!typeNameByTypeId.TryGetValue(row.TypeElementId, out var proposedTypeName))
-                {
-                    if (!typeCounter.ContainsKey(typeIdentityKey)) typeCounter[typeIdentityKey] = 0;
-                    typeCounter[typeIdentityKey]++;
-                    var typeSuffix = typeCounter[typeIdentityKey].ToString().PadLeft(request.TypeNumberWidth, '0');
-                    proposedTypeName = string.IsNullOrWhiteSpace(predefinedDisplay) || predefinedDisplay.Equals("Notdefined", StringComparison.OrdinalIgnoreCase)
-                        ? Sanitize($"{ifcClass}_Type{typeSuffix}")
-                        : Sanitize($"{ifcClass}_{predefinedDisplay}_Type{typeSuffix}");
-                    typeNameByTypeId[row.TypeElementId] = proposedTypeName;
-                }
+                var descriptor = typeDescriptors.TryGetValue(row.TypeElementId, out var cached)
+                    ? cached
+                    : (row.Category, row.Family, row.Type, NormalizeIfcClass(typeElement, row.Category, resolved.Entity), "Notdefined", "NOTDEFINED", string.Empty);
+                var ifcClass = descriptor.IfcClass;
+                var predefined = descriptor.PredefinedDisplay;
+                var predefinedSchema = descriptor.PredefinedSchema;
+                var proposedTypeName = typeNameByTypeId.TryGetValue(row.TypeElementId, out var assigned) ? assigned : string.Empty;
                 row.ProposedIfcTypeName = proposedTypeName;
-                row.ProposedIfcExportAs = "Ifc" + ifcClass;
+                row.ProposedIfcExportAs = ifcClass;
                 row.ProposedIfcEntity = ifcClass;
                 row.ProposedIfcPredefinedType = predefinedSchema;
-                row.ProposedUserDefinedPredefinedType = predefinedSchema == "USERDEFINED" ? (resolved.UserDefinedValue ?? string.Empty) : string.Empty;
+                row.ProposedUserDefinedPredefinedType = descriptor.UserDefined;
 
                 row.ProposedIfcName = BuildInstanceName(doc, element, ifcClass, predefined, request, instanceCounter, doorRoomCounter, windowRoomCounter, out var status);
                 row.Status = status;
@@ -115,6 +164,9 @@ namespace DfEIfcNamer.Services
             {
                 result.Warnings.Add("Duplicate proposed IFCName: " + duplicate);
             }
+            var distinctTypeRows = result.Rows.Where(r => r.TypeElementId > 0).GroupBy(r => r.TypeElementId).ToList();
+            var reusedTypeNameCount = distinctTypeRows.Count(g => g.Select(x => x.ProposedIfcTypeName).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1 && g.Count() > 1);
+            result.Warnings.Add($"Type numbering diagnostics: distinct types={distinctTypeRows.Count}, unique IFCName[Type] values={distinctTypeRows.Select(g => g.First().ProposedIfcTypeName).Distinct(StringComparer.OrdinalIgnoreCase).Count()}, repeated instances reusing same type name={reusedTypeNameCount}.");
 
             return result;
         }
@@ -172,8 +224,11 @@ namespace DfEIfcNamer.Services
                             {
                                 _typeWriter.Write(type, row.ProposedIfcTypeName, "IFCName [Type]", "IFCName[Type]");
                                 _typeWriter.Write(type, row.ProposedIfcTypeName, "IfcName[Type]");
-                            _typeWriter.Write(type, row.ProposedIfcExportAs, "IfcExportAs", "IFC Export As");
-                            _typeWriter.Write(type, row.ProposedIfcPredefinedType, "IFC Predefined Type", "DfE_IFCPredefinedType");
+                                if (TryWriteIfcExportAs(type, row, result))
+                                {
+                                    result.ExportAsUpdated++;
+                                }
+                                _typeWriter.Write(type, row.ProposedIfcPredefinedType, "IFC Predefined Type", "DfE_IFCPredefinedType");
                             _typeWriter.Write(type, row.ProposedIfcPredefinedType, "DfE_IFCPredefinedType");
                                 _typeWriter.Write(type, row.ProposedIfcEntity, "DfE_IFCEntity");
                                 _typeWriter.Write(type, row.ProposedUserDefinedPredefinedType, "DfE_UserDefinedPredefinedTypeValue");
@@ -194,6 +249,26 @@ namespace DfEIfcNamer.Services
             }
 
             return result;
+        }
+
+        private bool TryWriteIfcExportAs(Element type, NamingPreviewRow row, ApplyResult result)
+        {
+            if (string.IsNullOrWhiteSpace(row?.ProposedIfcEntity))
+            {
+                result.Skipped++;
+                result.Logs.Add($"Element {row?.ElementId}: unresolved IFC entity, skipped Export to IFC As update.");
+                return false;
+            }
+
+            var exportValue = row.ProposedIfcEntity.StartsWith("Ifc", StringComparison.OrdinalIgnoreCase)
+                ? row.ProposedIfcEntity
+                : "Ifc" + row.ProposedIfcEntity;
+            var written = _typeWriter.Write(type, exportValue, "Export to IFC As", "IFC Export As", "IfcExportAs");
+            if (!written)
+            {
+                result.Logs.Add($"Element {row.ElementId}: Export to IFC As parameter not found or read-only.");
+            }
+            return written;
         }
 
         private string BuildInstanceName(Document doc, Element element, string ifcClass, string predefined, NamingGenerationRequest req,

@@ -156,6 +156,8 @@
                     <WrapPanel>
                         <Button Content="Load Selection" Margin="0,0,8,8" Command="{Binding SpaceZone.LoadSelectionCommand}"/>
                         <Button Content="Resolve Rooms/Spaces" Margin="0,0,8,8" Command="{Binding SpaceZone.ResolveRoomsCommand}"/>
+                        <Button Content="Select All" Margin="0,0,8,8" Command="{Binding SpaceZone.SelectAllRowsCommand}"/>
+                        <Button Content="Unselect All" Margin="0,0,8,8" Command="{Binding SpaceZone.UnselectAllRowsCommand}"/>
                         <TextBlock Text="Zone" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <ComboBox Width="220" DisplayMemberPath="Name" SelectedValuePath="Name" Text="{Binding SpaceZone.ProposedZoneName, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" ItemsSource="{Binding SpaceZone.Zones}" Margin="0,0,8,8"/>
                         <TextBlock Text="ADS" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -178,7 +180,10 @@
                             <DataGridTextColumn Header="Proposed SpaceReference" Binding="{Binding ProposedSpaceReference}" Width="140"/>
                             <DataGridTextColumn Header="Current ZoneName" Binding="{Binding CurrentZoneName}" Width="120"/>
                             <DataGridTextColumn Header="Proposed ZoneName" Binding="{Binding ProposedZoneName}" Width="120"/>
-                            <DataGridTextColumn Header="Proposed ADS" Binding="{Binding ProposedAdsClassification}" Width="100"/>
+                            <DataGridTextColumn Header="Current ADS Text" Binding="{Binding CurrentAdsText}" Width="110"/>
+                            <DataGridTextColumn Header="Proposed ADS Text" Binding="{Binding ProposedAdsText}" Width="110"/>
+                            <DataGridTextColumn Header="Current ADS Classification" Binding="{Binding CurrentAdsClassification}" Width="180"/>
+                            <DataGridTextColumn Header="Proposed ADS" Binding="{Binding ProposedAdsClassification}" Width="180"/>
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
                         </DataGrid.Columns>
                     </DataGrid>
