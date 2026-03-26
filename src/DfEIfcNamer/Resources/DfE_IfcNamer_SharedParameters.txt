@@ -17,8 +17,28 @@ PARAM	55555555-5555-5555-5555-555555555556	Classification(6)	TEXT		PG_IFC	1	Clas
 PARAM	55555555-5555-5555-5555-555555555557	Classification(7)	TEXT		PG_IFC	1	Classification slot 7	1	0
 PARAM	55555555-5555-5555-5555-555555555558	Classification(8)	TEXT		PG_IFC	1	Classification slot 8	1	0
 PARAM	55555555-5555-5555-5555-555555555559	Classification(9)	TEXT		PG_IFC	1	Classification slot 9	1	0
+PARAM	88888888-8888-8888-8888-888888888881	Classification.Uniclass.Pr.Number	TEXT		PG_IFC	1	Uniclass Pr Number	1	0
+PARAM	88888888-8888-8888-8888-888888888882	Classification.Uniclass.Pr.Description	TEXT		PG_IFC	1	Uniclass Pr Description	1	0
+PARAM	88888888-8888-8888-8888-888888888883	Classification.Uniclass.Ss.Number	TEXT		PG_IFC	1	Uniclass Ss Number	1	0
+PARAM	88888888-8888-8888-8888-888888888884	Classification.Uniclass.Ss.Description	TEXT		PG_IFC	1	Uniclass Ss Description	1	0
+PARAM	99999999-9999-9999-9999-999999999991	SystemName	TEXT		PG_IFC	1	System name	1	0
+PARAM	99999999-9999-9999-9999-999999999992	SystemDescription	TEXT		PG_IFC	1	System description	1	0
+PARAM	99999999-9999-9999-9999-999999999993	SystemCategory	TEXT		PG_IFC	1	System category	1	0
+PARAM	aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1	ZoneName	TEXT		PG_IFC	1	Zone name	1	0
+PARAM	aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2	ZoneDescription	TEXT		PG_IFC	1	Zone description	1	0
+PARAM	aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3	ZoneCategory	TEXT		PG_IFC	1	Zone category	1	0
+PARAM	aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4	SpaceReference	TEXT		PG_IFC	1	Room/space reference text	1	0
+PARAM	aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5	DfE ADS Classification	TEXT		PG_IFC	1	DfE ADS room/space classification	1	0
 PARAM	66666666-6666-6666-6666-666666666661	DfE_ProjectInfoJson	TEXT		PG_DATA	1	Project config JSON	1	0
 PARAM	66666666-6666-6666-6666-666666666662	DfE_NamingCounters	TEXT		PG_DATA	1	Naming counters JSON	1	0
 PARAM	77777777-7777-7777-7777-777777777771	DfE_IFCPredefinedType	TEXT		PG_IFC	1	Fallback IFC predefined type	1	0
 PARAM	77777777-7777-7777-7777-777777777772	DfE_UserDefinedPredefinedTypeValue	TEXT		PG_IFC	1	USERDEFINED value for IFC predefined type	1	0
 PARAM	77777777-7777-7777-7777-777777777773	DfE_IFCEntity	TEXT		PG_IFC	1	IFC class token fallback	1	0
+PARAM	bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1	IfcProjectName	TEXT		PG_DATA	1	IFC project name	1	0
+PARAM	bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2	IfcProjectDescription	TEXT		PG_DATA	1	IFC project description	1	0
+PARAM	bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3	IfcSiteName	TEXT		PG_DATA	1	IFC site name	1	0
+PARAM	bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4	IfcSiteDescription	TEXT		PG_DATA	1	IFC site description	1	0
+PARAM	bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb5	IfcBuildingName	TEXT		PG_DATA	1	IFC building name	1	0
+PARAM	bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb6	IfcBuildingDescription	TEXT		PG_DATA	1	IFC building description	1	0
+PARAM	bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb7	UPRN	TEXT		PG_DATA	1	UPRN	1	0
+PARAM	bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb8	MaximumBlockHeight	TEXT		PG_DATA	1	Maximum block height	1	0

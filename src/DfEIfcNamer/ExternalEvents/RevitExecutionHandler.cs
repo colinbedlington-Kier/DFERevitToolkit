@@ -49,10 +49,14 @@ namespace DfEIfcNamer.ExternalEvents
                     case RevitRequestId.CheckAuthoringSetup:
                         response.AuthoringSetup = _authoringService.CheckSetup(doc, _request.CategoryIds);
                         response.Systems = _authoringService.GetSystems();
+                        response.Zones = _authoringService.GetZones();
+                        response.AdsClassifications = _authoringService.GetAdsClassifications();
                         break;
                     case RevitRequestId.CreateAuthoringParameters:
                         response.AuthoringSetup = _authoringService.CreateMissingParameters(doc, _request.CategoryIds);
                         response.Systems = _authoringService.GetSystems();
+                        response.Zones = _authoringService.GetZones();
+                        response.AdsClassifications = _authoringService.GetAdsClassifications();
                         break;
                     case RevitRequestId.LoadNamingCodeMap:
                         response.NamingCodes = _authoringService.LoadNamingCodes(_request.ExternalPath);
@@ -87,12 +91,20 @@ namespace DfEIfcNamer.ExternalEvents
                         break;
                     case RevitRequestId.ResolveSpaceZone:
                         response.SpaceZonePreview = _authoringService.BuildSpaceZonePreview(doc, _request.SpaceZoneRequest ?? new SpaceZoneRequest());
+                        response.Zones = _authoringService.GetZones();
+                        response.AdsClassifications = _authoringService.GetAdsClassifications();
                         break;
                     case RevitRequestId.ApplySpaceReference:
                         response.ApplyResult = _authoringService.ApplySpaceReference(doc, _request.SpaceZoneRows);
                         break;
                     case RevitRequestId.ApplyZoneName:
                         response.ApplyResult = _authoringService.ApplyZone(doc, _request.SpaceZoneRows);
+                        break;
+                    case RevitRequestId.GenerateClassificationSyncPreview:
+                        response.ClassificationSyncResult = _authoringService.BuildClassificationSyncPreview(doc, _request.NamingRequest?.CategoryIds);
+                        break;
+                    case RevitRequestId.ApplyClassificationSync:
+                        response.ApplyResult = _authoringService.ApplyClassificationSync(doc, _request.ClassificationSyncRows);
                         break;
                     case RevitRequestId.SyncCobieFromIfc:
                         response.SyncResult = _authoringService.SyncCobie(doc);
