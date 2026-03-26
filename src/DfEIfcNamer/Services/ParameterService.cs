@@ -615,7 +615,7 @@ namespace DfEIfcNamer.Services
             return false;
         }
 
-        private static bool EnsureSharedParameterFileConfigured(
+        internal static bool EnsureSharedParameterFileConfigured(
             Autodesk.Revit.ApplicationServices.Application app,
             string sharedPath,
             out string error)

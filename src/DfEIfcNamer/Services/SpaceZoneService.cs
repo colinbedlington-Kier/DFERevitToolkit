@@ -138,7 +138,7 @@ namespace DfEIfcNamer.Services
             skippedNonRoomSpace = 0;
             Func<Element, bool> valid = e =>
             {
-                var bic = (BuiltInCategory)e.Category.Id.IntegerValue;
+                var bic = (BuiltInCategory)e.Category.Id.Value;
                 return bic == BuiltInCategory.OST_Rooms || bic == BuiltInCategory.OST_MEPSpaces;
             };
             if (ids != null && ids.Any())
