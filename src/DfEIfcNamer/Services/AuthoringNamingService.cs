@@ -14,8 +14,7 @@ namespace DfEIfcNamer.Services
         private readonly SystemRegistryService _systemRegistry;
         private readonly SpaceZoneService _spaceZoneService;
         private readonly IfcDefaultsResolverService _ifcDefaults;
-        private readonly InstanceParameterWriter _instanceWriter = new InstanceParameterWriter();
-        private readonly TypeParameterWriter _typeWriter = new TypeParameterWriter();
+        private readonly ParameterWriteService _parameterWriter = new ParameterWriteService();
 
         public AuthoringNamingService(NamingCodeRegistryService codeRegistry, SystemRegistryService systemRegistry, SpaceZoneService spaceZoneService, IfcDefaultsResolverService ifcDefaults)
         {
@@ -185,6 +184,7 @@ namespace DfEIfcNamer.Services
                         if (!row.Eligible)
                         {
                             result.Skipped++;
+                            result.Logs.Add($"Scope=Instance; Target={row.ElementId}; Parameter=n/a; Status=Skipped; Reason=row not eligible");
                             continue;
                         }
 
@@ -192,21 +192,24 @@ namespace DfEIfcNamer.Services
                         if (element == null)
                         {
                             result.Failed++;
+                            result.Logs.Add($"Scope=Instance; Target={row.ElementId}; Parameter=n/a; Status=Failed; Reason=missing element");
                             continue;
                         }
 
                         if (applyInstance)
                         {
-                            _instanceWriter.Write(element, row.ProposedIfcName, "IFCName", "IfcName");
-                            _instanceWriter.Write(element, row.ProposedIfcName, "IfcName");
-                            result.InstancesUpdated++;
+                            if (_parameterWriter.SetInstanceParameter(element, "IFCName", row.ProposedIfcName, result) ||
+                                _parameterWriter.SetInstanceParameter(element, "IfcName", row.ProposedIfcName, result))
+                            {
+                                result.InstancesUpdated++;
+                            }
                         }
 
                         if (applySystem)
                         {
-                            _instanceWriter.Write(element, row.ProposedSystemName, "SystemName");
-                            _instanceWriter.Write(element, row.ProposedSystemDescription, "SystemDescription");
-                            _instanceWriter.Write(element, row.Category, "SystemCategory");
+                            _parameterWriter.SetInstanceParameter(element, "SystemName", row.ProposedSystemName, result);
+                            _parameterWriter.SetInstanceParameter(element, "SystemDescription", row.ProposedSystemDescription, result);
+                            _parameterWriter.SetInstanceParameter(element, "SystemCategory", row.Category, result);
                         }
 
                         if (applyType)
@@ -216,22 +219,23 @@ namespace DfEIfcNamer.Services
                             if (typeId <= 0)
                             {
                                 result.Skipped++;
-                                result.Logs.Add($"Element {row.ElementId}: missing valid type.");
+                                result.Logs.Add($"Scope=Type; Target={row.ElementId}; Parameter=n/a; Status=Skipped; Reason=missing valid type");
                                 continue;
                             }
 
                             if (typeWriteSet.Add(typeId))
                             {
-                                _typeWriter.Write(type, row.ProposedIfcTypeName, "IFCName [Type]", "IFCName[Type]");
-                                _typeWriter.Write(type, row.ProposedIfcTypeName, "IfcName[Type]");
-                                if (TryWriteIfcExportAs(type, row, result))
+                                _parameterWriter.SetTypeParameter(doc, element, "IFCName [Type]", row.ProposedIfcTypeName, result);
+                                _parameterWriter.SetTypeParameter(doc, element, "IFCName[Type]", row.ProposedIfcTypeName, result);
+                                _parameterWriter.SetTypeParameter(doc, element, "IfcName[Type]", row.ProposedIfcTypeName, result);
+                                if (TryWriteIfcExportAs(doc, element, row, result))
                                 {
                                     result.ExportAsUpdated++;
                                 }
-                                _typeWriter.Write(type, row.ProposedIfcPredefinedType, "IFC Predefined Type", "DfE_IFCPredefinedType");
-                            _typeWriter.Write(type, row.ProposedIfcPredefinedType, "DfE_IFCPredefinedType");
-                                _typeWriter.Write(type, row.ProposedIfcEntity, "DfE_IFCEntity");
-                                _typeWriter.Write(type, row.ProposedUserDefinedPredefinedType, "DfE_UserDefinedPredefinedTypeValue");
+                                _parameterWriter.SetTypeParameter(doc, element, "IFC Predefined Type", row.ProposedIfcPredefinedType, result);
+                                _parameterWriter.SetTypeParameter(doc, element, "DfE_IFCPredefinedType", row.ProposedIfcPredefinedType, result);
+                                _parameterWriter.SetTypeParameter(doc, element, "DfE_IFCEntity", row.ProposedIfcEntity, result);
+                                _parameterWriter.SetTypeParameter(doc, element, "DfE_UserDefinedPredefinedTypeValue", row.ProposedUserDefinedPredefinedType, result);
                                 result.UniqueTypesUpdated++;
                             }
                         }
@@ -241,7 +245,7 @@ namespace DfEIfcNamer.Services
                     catch (Exception ex)
                     {
                         result.Failed++;
-                        result.Logs.Add($"Element {row.ElementId}: {ex.Message}");
+                        result.Logs.Add($"Scope=Instance; Target={row.ElementId}; Parameter=n/a; Status=Failed; Reason={ex.Message}");
                     }
                 }
 
@@ -251,24 +255,21 @@ namespace DfEIfcNamer.Services
             return result;
         }
 
-        private bool TryWriteIfcExportAs(Element type, NamingPreviewRow row, ApplyResult result)
+        private bool TryWriteIfcExportAs(Document doc, Element element, NamingPreviewRow row, ApplyResult result)
         {
             if (string.IsNullOrWhiteSpace(row?.ProposedIfcEntity))
             {
                 result.Skipped++;
-                result.Logs.Add($"Element {row?.ElementId}: unresolved IFC entity, skipped Export to IFC As update.");
+                result.Logs.Add($"Scope=Type; Target={row?.ElementId}; Parameter=Export to IFC As; Status=Skipped; Reason=unresolved IFC entity");
                 return false;
             }
 
             var exportValue = row.ProposedIfcEntity.StartsWith("Ifc", StringComparison.OrdinalIgnoreCase)
                 ? row.ProposedIfcEntity
                 : "Ifc" + row.ProposedIfcEntity;
-            var written = _typeWriter.Write(type, exportValue, "Export to IFC As", "IFC Export As", "IfcExportAs");
-            if (!written)
-            {
-                result.Logs.Add($"Element {row.ElementId}: Export to IFC As parameter not found or read-only.");
-            }
-            return written;
+            return _parameterWriter.SetTypeParameter(doc, element, "Export to IFC As", exportValue, result)
+                || _parameterWriter.SetTypeParameter(doc, element, "IFC Export As", exportValue, result)
+                || _parameterWriter.SetTypeParameter(doc, element, "IfcExportAs", exportValue, result);
         }
 
         private string BuildInstanceName(Document doc, Element element, string ifcClass, string predefined, NamingGenerationRequest req,

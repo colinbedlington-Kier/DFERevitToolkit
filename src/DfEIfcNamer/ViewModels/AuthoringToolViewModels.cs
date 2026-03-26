@@ -360,8 +360,8 @@ namespace DfEIfcNamer.ViewModels
         {
             var dialog = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "DfE_NamingReport.csv" };
             if (dialog.ShowDialog() != true) return;
-            var lines = new[] { "ElementId,Category,Family,Type,CurrentIFCName,ProposedIFCName,CurrentIFCNameType,ProposedIFCNameType,CurrentSystemName,ProposedSystemName,ProposedIfcEntity,ProposedExportToIfcAs,ProposedIfcPredefinedType,Status" }
-                .Concat(Rows.Select(r => $"{r.ElementId},{r.Category},{r.Family},{r.Type},{r.CurrentIfcName},{r.ProposedIfcName},{r.CurrentIfcTypeName},{r.ProposedIfcTypeName},{r.CurrentSystemName},{r.ProposedSystemName},{r.ProposedIfcEntity},{r.ProposedIfcExportAs},{r.ProposedIfcPredefinedType},{r.Status}"));
+            var lines = new[] { "Scope,Target,ElementId,Category,Family,Type,CurrentIFCName,ProposedIFCName,CurrentIFCNameType,ProposedIFCNameType,CurrentSystemName,ProposedSystemName,ProposedIfcEntity,ProposedExportToIfcAs,ProposedIfcPredefinedType,Status" }
+                .Concat(Rows.Select(r => $"Instance+Type,{r.ElementId},{r.ElementId},{r.Category},{r.Family},{r.Type},{r.CurrentIfcName},{r.ProposedIfcName},{r.CurrentIfcTypeName},{r.ProposedIfcTypeName},{r.CurrentSystemName},{r.ProposedSystemName},{r.ProposedIfcEntity},{r.ProposedIfcExportAs},{r.ProposedIfcPredefinedType},{r.Status}"));
             File.WriteAllLines(dialog.FileName, lines);
         }
 
@@ -411,6 +411,9 @@ namespace DfEIfcNamer.ViewModels
         public string IfcBuildingDescription { get => Data.IfcBuildingDescription; set { Data.IfcBuildingDescription = value; RaisePropertyChanged(); } }
         public string UPRN { get => Data.UPRN; set { Data.UPRN = value; RaisePropertyChanged(); } }
         public string MaximumBlockHeight { get => Data.MaximumBlockHeight; set { Data.MaximumBlockHeight = value; RaisePropertyChanged(); } }
+        public string NumberOfStoreys { get => Data.NumberOfStoreys; set { Data.NumberOfStoreys = value; RaisePropertyChanged(); } }
+        public string Phase { get => Data.Phase; set { Data.Phase = value; RaisePropertyChanged(); } }
+        public string BlockConstructionType { get => Data.BlockConstructionType; set { Data.BlockConstructionType = value; RaisePropertyChanged(); } }
 
         private string _status = "No header data loaded.";
         public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
@@ -451,7 +454,7 @@ namespace DfEIfcNamer.ViewModels
         {
             var d = new SaveFileDialog { Filter = "Text|*.txt", FileName = "DfE_HeaderSummary.txt" };
             if (d.ShowDialog() != true) return;
-            File.WriteAllText(d.FileName, $"Project: {IfcProjectName}\nSite: {IfcSiteName}\nBuilding: {IfcBuildingName}\nUPRN: {UPRN}\nMaximumBlockHeight: {MaximumBlockHeight}");
+            File.WriteAllText(d.FileName, $"Project: {IfcProjectName}\nSite: {IfcSiteName}\nBuilding: {IfcBuildingName}\nUPRN: {UPRN}\nMaximumBlockHeight: {MaximumBlockHeight}\nNumberOfStoreys: {NumberOfStoreys}\nPhase: {Phase}\nBlockConstructionType: {BlockConstructionType}");
             Status = "Header summary exported.";
         }
 
@@ -468,6 +471,7 @@ namespace DfEIfcNamer.ViewModels
             RaisePropertyChanged(nameof(IfcProjectName)); RaisePropertyChanged(nameof(IfcProjectDescription)); RaisePropertyChanged(nameof(IfcSiteName));
             RaisePropertyChanged(nameof(IfcSiteDescription)); RaisePropertyChanged(nameof(IfcBuildingName)); RaisePropertyChanged(nameof(IfcBuildingDescription));
             RaisePropertyChanged(nameof(UPRN)); RaisePropertyChanged(nameof(MaximumBlockHeight));
+            RaisePropertyChanged(nameof(NumberOfStoreys)); RaisePropertyChanged(nameof(Phase)); RaisePropertyChanged(nameof(BlockConstructionType));
         }
     }
 
@@ -596,8 +600,8 @@ namespace DfEIfcNamer.ViewModels
         {
             var d = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "DfE_SpaceZoneReport.csv" };
             if (d.ShowDialog() != true) return;
-            var lines = new[] { "ElementId,Category,FamilyType,Level,RoomNumber,RoomName,CurrentSpaceReference,ProposedSpaceReference,CurrentZoneName,ProposedZoneName,CurrentAdsText,ProposedAdsText,CurrentAdsClassification,ProposedAdsClassification,Status" }
-                .Concat(Rows.Select(r => $"{r.ElementId},{r.Category},{r.FamilyType},{r.Level},{r.RoomNumber},{r.RoomName},{r.CurrentSpaceReference},{r.ProposedSpaceReference},{r.CurrentZoneName},{r.ProposedZoneName},{r.CurrentAdsText},{r.ProposedAdsText},{r.CurrentAdsClassification},{r.ProposedAdsClassification},{r.Status}"));
+            var lines = new[] { "Scope,Target,ElementId,Category,FamilyType,Level,RoomNumber,RoomName,CurrentSpaceReference,ProposedSpaceReference,CurrentZoneName,ProposedZoneName,CurrentAdsText,ProposedAdsText,CurrentAdsClassification,ProposedAdsClassification,Status" }
+                .Concat(Rows.Select(r => $"Room,{r.ElementId},{r.ElementId},{r.Category},{r.FamilyType},{r.Level},{r.RoomNumber},{r.RoomName},{r.CurrentSpaceReference},{r.ProposedSpaceReference},{r.CurrentZoneName},{r.ProposedZoneName},{r.CurrentAdsText},{r.ProposedAdsText},{r.CurrentAdsClassification},{r.ProposedAdsClassification},{r.Status}"));
             File.WriteAllLines(d.FileName, lines);
         }
     }

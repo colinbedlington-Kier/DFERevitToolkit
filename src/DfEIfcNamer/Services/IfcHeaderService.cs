@@ -8,11 +8,12 @@ namespace DfEIfcNamer.Services
 {
     public class IfcHeaderService
     {
-        private readonly ProjectParameterWriter _projectWriter = new ProjectParameterWriter();
+        private readonly ParameterWriteService _parameterWriter = new ParameterWriteService();
         private static readonly string[] Required =
         {
             "IfcProjectName", "IfcProjectDescription", "IfcSiteName", "IfcSiteDescription",
-            "IfcBuildingName", "IfcBuildingDescription", "UPRN", "MaximumBlockHeight"
+            "IfcBuildingName", "IfcBuildingDescription", "UPRN", "MaximumBlockHeight",
+            "NumberOfStoreys", "Phase", "BlockConstructionType"
         };
 
         public HeaderDataModel Read(Document doc)
@@ -27,7 +28,10 @@ namespace DfEIfcNamer.Services
                 IfcBuildingName = Get(project, ParameterWriteAliases.IfcBuildingName),
                 IfcBuildingDescription = Get(project, ParameterWriteAliases.IfcBuildingDescription),
                 UPRN = Get(project, "UPRN"),
-                MaximumBlockHeight = Get(project, "MaximumBlockHeight")
+                MaximumBlockHeight = Get(project, "MaximumBlockHeight"),
+                NumberOfStoreys = Get(project, "NumberOfStoreys"),
+                Phase = Get(project, "Phase"),
+                BlockConstructionType = Get(project, "BlockConstructionType")
             };
         }
 
@@ -60,14 +64,19 @@ namespace DfEIfcNamer.Services
                 foreach (var pair in ToPairs(data))
                 {
                     var names = pair.Key.Split('|');
-                    if (_projectWriter.Write(doc, pair.Value, names))
+                    var written = false;
+                    foreach (var name in names)
+                    {
+                        if (_parameterWriter.SetProjectParameter(doc, name, pair.Value, result))
+                        {
+                            written = true;
+                            break;
+                        }
+                    }
+
+                    if (written)
                     {
                         result.Updated++;
-                    }
-                    else
-                    {
-                        result.Skipped++;
-                        result.Logs.Add("Missing/read-only project parameter: " + pair.Key);
                     }
                 }
 
@@ -105,7 +114,10 @@ namespace DfEIfcNamer.Services
                 ["IfcBuildingName|Building Name"] = d?.IfcBuildingName,
                 ["IfcBuildingDescription|Building Description"] = d?.IfcBuildingDescription,
                 ["UPRN"] = d?.UPRN,
-                ["MaximumBlockHeight"] = d?.MaximumBlockHeight
+                ["MaximumBlockHeight"] = d?.MaximumBlockHeight,
+                ["NumberOfStoreys"] = d?.NumberOfStoreys,
+                ["Phase"] = d?.Phase,
+                ["BlockConstructionType"] = d?.BlockConstructionType
             };
         }
 
