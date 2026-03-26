@@ -28,14 +28,19 @@ namespace DfEIfcNamer.Services
                 var prDescription = Get(type, "Classification.Uniclass.Pr.Description");
                 var ssNumber = Get(type, "Classification.Uniclass.Ss.Number");
                 var ssDescription = Get(type, "Classification.Uniclass.Ss.Description");
-                if (string.IsNullOrWhiteSpace(prNumber) && string.IsNullOrWhiteSpace(ssNumber)) continue;
+                var enName = Get(type, "Uniclass.Classification.En.Name");
+                var efName = Get(type, "Uniclass.Classification.EF.Name");
+                if (string.IsNullOrWhiteSpace(prNumber) &&
+                    string.IsNullOrWhiteSpace(ssNumber) &&
+                    string.IsNullOrWhiteSpace(enName) &&
+                    string.IsNullOrWhiteSpace(efName)) continue;
 
-                var proposedC2 = string.IsNullOrWhiteSpace(prNumber)
-                    ? string.Empty
-                    : $"[Uniclass Pr Products] {prNumber} : {prDescription}".Trim();
-                var proposedC3 = string.IsNullOrWhiteSpace(ssNumber)
-                    ? string.Empty
-                    : $"[Uniclass Ss Systems] {ssNumber} : {ssDescription}".Trim();
+                var proposedC2 = !string.IsNullOrWhiteSpace(enName)
+                    ? $"[Uniclass En Entities] {enName}".Trim()
+                    : (string.IsNullOrWhiteSpace(prNumber) ? string.Empty : $"[Uniclass Pr Products] {prNumber} : {prDescription}".Trim());
+                var proposedC3 = !string.IsNullOrWhiteSpace(efName)
+                    ? $"[Uniclass EF Elements/Functions] {efName}".Trim()
+                    : (string.IsNullOrWhiteSpace(ssNumber) ? string.Empty : $"[Uniclass Ss Systems] {ssNumber} : {ssDescription}".Trim());
 
                 result.Rows.Add(new ClassificationSyncPreviewRow
                 {
@@ -46,12 +51,19 @@ namespace DfEIfcNamer.Services
                     SourcePrDescription = prDescription,
                     SourceSsNumber = ssNumber,
                     SourceSsDescription = ssDescription,
+                    SourceClassificationEnName = enName,
+                    SourceClassificationEfName = efName,
                     ProposedClassification2 = proposedC2,
                     ProposedClassification3 = proposedC3,
                     Scope = "Type->Instance",
                     Status = "Ready"
                 });
             }
+
+            if (!elements.Any(e => doc.GetElement(e.GetTypeId())?.LookupParameter("Uniclass.Classification.En.Name") != null))
+                result.Warnings.Add("Missing source parameter on scanned types: Uniclass.Classification.En.Name (Classification(2) fallback used where available).");
+            if (!elements.Any(e => doc.GetElement(e.GetTypeId())?.LookupParameter("Uniclass.Classification.EF.Name") != null))
+                result.Warnings.Add("Missing source parameter on scanned types: Uniclass.Classification.EF.Name (Classification(3) fallback used where available).");
 
             result.SourceRows = result.Rows.Count;
             result.TypeTargets = result.Rows.Select(x => x.TypeElementId).Distinct().Count();

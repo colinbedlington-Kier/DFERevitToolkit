@@ -167,7 +167,8 @@ namespace DfEIfcNamer.ViewModels
                 ExternalPath = path,
                 Callback = r =>
                 {
-                    SystemListStatus = $"Systems loaded: {r.Systems?.Count ?? 0}";
+                    var loaded = r.Systems?.Count ?? 0;
+                    SystemListStatus = $"Systems loaded: {loaded}, bound to UI: {loaded}, filtered out: 0";
                     if (!string.IsNullOrWhiteSpace(r.Error)) Log.Add("Error loading systems: " + r.Error);
                     Log.Add("Loaded system list.");
                 }
@@ -295,7 +296,10 @@ namespace DfEIfcNamer.ViewModels
             _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.LoadSystemList, Callback = r =>
             {
                 Systems.Clear();
+                var loaded = r.Systems?.Count ?? 0;
                 foreach (var s in r.Systems ?? Enumerable.Empty<SystemRegistryEntry>()) Systems.Add(s);
+                var bound = Systems.Count;
+                Status = $"Systems loaded: {loaded}, bound: {bound}, filtered out: {Math.Max(0, loaded - bound)}";
             }});
         }
 
@@ -328,11 +332,26 @@ namespace DfEIfcNamer.ViewModels
 
         private void Apply(RevitRequestId requestId)
         {
+            var selectedRows = requestId == RevitRequestId.ApplySystemData
+                ? Rows.Where(r => r.IsSelected).ToList()
+                : Rows.ToList();
+
+            if (requestId == RevitRequestId.ApplySystemData && selectedRows.Count == 0)
+            {
+                Status = "No rows selected. Select at least one row before applying system data.";
+                return;
+            }
+
             _dispatcher.Raise(new RevitRequest
             {
                 Id = requestId,
-                NamingRows = Rows.ToList(),
-                Callback = r => { Status = $"Updated: {r.ApplyResult?.Updated ?? 0}, Types: {r.ApplyResult?.UniqueTypesUpdated ?? 0}, Instances: {r.ApplyResult?.InstancesUpdated ?? 0}, Skipped: {r.ApplyResult?.Skipped ?? 0}, Failed: {r.ApplyResult?.Failed ?? 0}"; }
+                NamingRows = selectedRows,
+                Callback = r =>
+                {
+                    var updated = r.ApplyResult?.Updated ?? 0;
+                    var skipped = r.ApplyResult?.Skipped ?? 0;
+                    Status = $"Selected rows: {selectedRows.Count}, Updated: {updated}, Types: {r.ApplyResult?.UniqueTypesUpdated ?? 0}, Instances: {r.ApplyResult?.InstancesUpdated ?? 0}, Skipped: {skipped}, Failed: {r.ApplyResult?.Failed ?? 0}";
+                }
             });
         }
 
@@ -501,14 +520,48 @@ namespace DfEIfcNamer.ViewModels
 
         private void ApplySpace()
         {
-            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ApplySpaceReference, SpaceZoneRows = Rows.ToList(), Callback = r => Status = $"SpaceReference updated: {r.ApplyResult?.Updated ?? 0}, skipped: {r.ApplyResult?.Skipped ?? 0}" });
+            var selectedRows = Rows.Where(r => r.IsSelected).ToList();
+            if (selectedRows.Count == 0)
+            {
+                Status = "No rows selected. Select at least one row before applying SpaceReference.";
+                return;
+            }
+
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.ApplySpaceReference,
+                SpaceZoneRows = selectedRows,
+                Callback = r =>
+                {
+                    var updated = r.ApplyResult?.Updated ?? 0;
+                    var skipped = r.ApplyResult?.Skipped ?? 0;
+                    Status = $"SpaceReference apply - selected: {selectedRows.Count}, updated: {updated}, skipped: {skipped}";
+                }
+            });
         }
 
         private void ApplyZone()
         {
-            foreach (var row in Rows) row.ProposedZoneName = ProposedZoneName;
-            foreach (var row in Rows) row.ProposedAdsClassification = ProposedAdsClassification;
-            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ApplyZoneName, SpaceZoneRows = Rows.ToList(), Callback = r => Status = $"ZoneName updated: {r.ApplyResult?.Updated ?? 0}, skipped: {r.ApplyResult?.Skipped ?? 0}" });
+            var selectedRows = Rows.Where(r => r.IsSelected).ToList();
+            if (selectedRows.Count == 0)
+            {
+                Status = "No rows selected. Select at least one row before applying ZoneName.";
+                return;
+            }
+
+            foreach (var row in selectedRows) row.ProposedZoneName = ProposedZoneName;
+            foreach (var row in selectedRows) row.ProposedAdsClassification = ProposedAdsClassification;
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.ApplyZoneName,
+                SpaceZoneRows = selectedRows,
+                Callback = r =>
+                {
+                    var updated = r.ApplyResult?.Updated ?? 0;
+                    var skipped = r.ApplyResult?.Skipped ?? 0;
+                    Status = $"Zone apply - selected: {selectedRows.Count}, updated: {updated}, skipped: {skipped}";
+                }
+            });
         }
 
         private void Validate()
@@ -638,7 +691,9 @@ namespace DfEIfcNamer.ViewModels
         {
             _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.SyncCobieFromIfc, Callback = r =>
             {
-                Status = $"COBie sync done. Instance updated: {r.SyncResult?.InstancesUpdated ?? 0}, Type updated: {r.SyncResult?.TypesUpdated ?? 0}";
+                var sync = r.SyncResult;
+                var summary = sync?.Logs?.Where(x => x.Severity == "Info").Take(5).Select(x => x.Message) ?? Enumerable.Empty<string>();
+                Status = $"COBie sync done. Instance updated: {sync?.InstancesUpdated ?? 0}, skipped: {sync?.InstancesSkipped ?? 0}, failed: {sync?.InstancesFailed ?? 0}. Type updated: {sync?.TypesUpdated ?? 0}, skipped: {sync?.TypesSkipped ?? 0}, failed: {sync?.TypesFailed ?? 0}. {string.Join(" | ", summary)}";
             }});
         }
 

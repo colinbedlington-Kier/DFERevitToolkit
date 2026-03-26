@@ -76,6 +76,7 @@ namespace DfEIfcNamer.Models
 
     public class NamingPreviewRow
     {
+        public bool IsSelected { get; set; } = true;
         public long ElementId { get; set; }
         public long TypeElementId { get; set; }
         public string Category { get; set; }
@@ -141,6 +142,7 @@ namespace DfEIfcNamer.Models
 
     public class SpaceZonePreviewRow
     {
+        public bool IsSelected { get; set; } = true;
         public long ElementId { get; set; }
         public string Category { get; set; }
         public string FamilyType { get; set; }
@@ -230,6 +232,8 @@ namespace DfEIfcNamer.Models
         public string Category { get; set; }
         public string SourceClassification { get; set; }
         public string SourceClassification2 { get; set; }
+        public string SourceClassificationEnName { get; set; }
+        public string SourceClassificationEfName { get; set; }
         public string SourcePrNumber { get; set; }
         public string SourcePrDescription { get; set; }
         public string SourceSsNumber { get; set; }

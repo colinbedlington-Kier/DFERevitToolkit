@@ -145,7 +145,7 @@ namespace DfEIfcNamer.Services
                     grouped.TryGetValue(sharedName, out var sharedMatch);
                     var expectedScope = scopeOverrides != null && scopeOverrides.TryGetValue(sharedName, out var overrideScope)
                         ? overrideScope
-                        : entry?.Scope ?? ParameterScopeKind.Instance;
+                        : ResolveExpectedScope(sharedName, entry);
 
                     var existingParam = ResolveParameter(doc, aliases, expectedScope);
                     var actualScope = ResolveActualScope(bindings, aliases, existingParam, expectedScope);
@@ -153,7 +153,10 @@ namespace DfEIfcNamer.Services
                     var mismatch = exists && actualScope != expectedScope.ToString() && actualScope != "Unknown";
                     var action = !exists ? "create" : mismatch ? "replace" : "skip";
                     var result = exists ? (mismatch ? "ScopeMismatch" : "Verified") : "Missing";
-                    var notes = exists ? "Bound." : "Not bound.";
+                    var mismatchReason = mismatch ? $"Expected {expectedScope}, but found {actualScope}." : string.Empty;
+                    var notes = exists
+                        ? (string.IsNullOrWhiteSpace(mismatchReason) ? "Bound." : mismatchReason)
+                        : "Not bound.";
 
                     if (createMissing && (!exists || mismatch) && sharedMatch.Definition != null)
                     {
@@ -296,6 +299,17 @@ namespace DfEIfcNamer.Services
             }
 
             return existingParam == null ? "Missing" : "Unknown";
+        }
+
+        private static ParameterScopeKind ResolveExpectedScope(string sharedName, ParameterBindingManifestEntry entry)
+        {
+            if (!string.IsNullOrWhiteSpace(sharedName) &&
+                sharedName.StartsWith("COBie.Type.", StringComparison.OrdinalIgnoreCase))
+            {
+                return ParameterScopeKind.Type;
+            }
+
+            return entry?.Scope ?? ParameterScopeKind.Instance;
         }
     }
 }

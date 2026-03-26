@@ -99,7 +99,7 @@ namespace DfEIfcNamer.Services
             return new Dictionary<string, string>
             {
                 ["IfcProjectName|Project Name"] = d?.IfcProjectName,
-                ["IfcProjectDescription|Project Description"] = d?.IfcProjectDescription,
+                ["IfcDescription|IfcProjectDescription|Project Description"] = d?.IfcProjectDescription,
                 ["IfcSiteName|Site Name"] = d?.IfcSiteName,
                 ["IfcSiteDescription|Site Description"] = d?.IfcSiteDescription,
                 ["IfcBuildingName|Building Name"] = d?.IfcBuildingName,

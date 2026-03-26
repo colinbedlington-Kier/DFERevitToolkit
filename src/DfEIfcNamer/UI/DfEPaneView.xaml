@@ -83,8 +83,9 @@
                         <Button Content="Apply All" Margin="0,0,8,8" Command="{Binding Naming.ApplyAllCommand}"/>
                         <Button Content="Export Naming Report" Margin="0,0,8,8" Command="{Binding Naming.ExportReportCommand}"/>
                     </WrapPanel>
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding Naming.Rows}" AutoGenerateColumns="False" IsReadOnly="True">
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding Naming.Rows}" AutoGenerateColumns="False" IsReadOnly="False">
                         <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected}" Width="60"/>
                             <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110"/>
                             <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="120"/>
@@ -164,8 +165,9 @@
                         <Button Content="Validate Assignment" Margin="0,0,8,8" Command="{Binding SpaceZone.ValidateAssignmentCommand}"/>
                         <Button Content="Export Assignment Report" Margin="0,0,8,8" Command="{Binding SpaceZone.ExportReportCommand}"/>
                     </WrapPanel>
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding SpaceZone.Rows}" AutoGenerateColumns="False" IsReadOnly="True">
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding SpaceZone.Rows}" AutoGenerateColumns="False" IsReadOnly="False">
                         <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected}" Width="60"/>
                             <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110"/>
                             <DataGridTextColumn Header="Family/Type" Binding="{Binding FamilyType}" Width="130"/>

@@ -5,7 +5,7 @@ namespace DfEIfcNamer.Services
     public static class ParameterWriteAliases
     {
         public static readonly string[] IfcProjectName = { "IfcProjectName", "Project Name" };
-        public static readonly string[] IfcProjectDescription = { "IfcProjectDescription", "Project Description" };
+        public static readonly string[] IfcProjectDescription = { "IfcDescription", "IfcProjectDescription", "Project Description" };
         public static readonly string[] IfcSiteName = { "IfcSiteName", "Site Name" };
         public static readonly string[] IfcSiteDescription = { "IfcSiteDescription", "Site Description" };
         public static readonly string[] IfcBuildingName = { "IfcBuildingName", "Building Name" };
