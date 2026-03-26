@@ -9,6 +9,9 @@ namespace DfEIfcNamer.Services
 {
     public class SpaceZoneService
     {
+        public const string AdsTextParameterName = "DfE ADS Code";
+        private static readonly string[] AdsTextParameterAliases = { AdsTextParameterName, "DfE ADS", "ADS Code", "ADS" };
+        private static readonly string[] AdsClassificationParameterAliases = { "DfE ADS Classification" };
         private readonly IList<ZoneCatalogEntry> _zones;
         private readonly IList<AdsClassificationEntry> _ads;
         private readonly InstanceParameterWriter _instanceWriter = new InstanceParameterWriter();
@@ -51,6 +54,9 @@ namespace DfEIfcNamer.Services
                 var roomName = room?.Name ?? Get(element, "Name");
                 if (string.IsNullOrWhiteSpace(roomNumber)) result.MissingRoomCount++;
                 var zone = _zones.FirstOrDefault(z => string.Equals(z.Name, request?.ProposedZoneName, StringComparison.OrdinalIgnoreCase));
+                var resolvedAds = ResolveAds(request?.ProposedAdsClassification);
+                var proposedAdsClassification = FormatAdsClassification(resolvedAds.Code, resolvedAds.Description);
+                var proposedAdsText = resolvedAds.Code;
 
                 result.Rows.Add(new SpaceZonePreviewRow
                 {
@@ -68,8 +74,10 @@ namespace DfEIfcNamer.Services
                     ProposedZoneDescription = zone?.Description ?? string.Empty,
                     CurrentZoneCategory = Get(element, "ZoneCategory"),
                     ProposedZoneCategory = zone?.Category ?? string.Empty,
-                    CurrentAdsClassification = Get(element, "DfE ADS Classification"),
-                    ProposedAdsClassification = FormatAdsClassification(request?.ProposedAdsClassification),
+                    CurrentAdsClassification = Get(element, AdsClassificationParameterAliases),
+                    ProposedAdsClassification = proposedAdsClassification,
+                    CurrentAdsText = Get(element, AdsTextParameterAliases),
+                    ProposedAdsText = proposedAdsText,
                     Status = string.IsNullOrWhiteSpace(roomNumber) ? "Missing room/space" : "OK"
                 });
             }
@@ -128,7 +136,16 @@ namespace DfEIfcNamer.Services
                     p.Set(row.ProposedZoneName ?? string.Empty);
                     _instanceWriter.Write(element, row.ProposedZoneDescription, "ZoneDescription");
                     _instanceWriter.Write(element, row.ProposedZoneCategory, "ZoneCategory");
-                    _instanceWriter.Write(element, FormatAdsClassification(row.ProposedAdsClassification), "DfE ADS Classification");
+                    var resolvedAds = ResolveAds(row.ProposedAdsClassification);
+                    var classificationValue = FormatAdsClassification(resolvedAds.Code, resolvedAds.Description);
+                    var wroteClassification = _instanceWriter.Write(element, classificationValue, AdsClassificationParameterAliases);
+                    var wroteText = !string.IsNullOrWhiteSpace(resolvedAds.Code) && _instanceWriter.Write(element, resolvedAds.Code, AdsTextParameterAliases);
+                    if (wroteClassification) result.AdsClassificationUpdated++;
+                    if (wroteText) result.AdsTextUpdated++;
+                    if (!wroteClassification || !wroteText)
+                    {
+                        result.Logs.Add($"Element {row.ElementId}: ADS write incomplete (classification={wroteClassification}, text={wroteText}).");
+                    }
                     result.Updated++;
                 }
 
@@ -183,18 +200,59 @@ namespace DfEIfcNamer.Services
             return (family + " / " + type).Trim(' ', '/');
         }
 
-        private static string Get(Element element, string parameterName) => element?.LookupParameter(parameterName)?.AsString() ?? string.Empty;
+        private static string Get(Element element, params string[] parameterNames)
+        {
+            foreach (var parameterName in parameterNames ?? Array.Empty<string>())
+            {
+                var value = element?.LookupParameter(parameterName)?.AsString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
 
-        private static string FormatAdsClassification(string source)
-        {
-            if (string.IsNullOrWhiteSpace(source)) return string.Empty;
-            if (source.StartsWith("[DfE ADS Classification]", StringComparison.OrdinalIgnoreCase)) return source;
-            return "[DfE ADS Classification] " + source.Trim();
+            return string.Empty;
         }
-        private static void Set(Element element, string value, string parameterName)
+
+        private (string Code, string Description) ResolveAds(string source)
         {
-            var p = element?.LookupParameter(parameterName);
-            if (p != null && !p.IsReadOnly) p.Set(value ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return (string.Empty, string.Empty);
+            }
+
+            var payload = source.Trim();
+            if (payload.StartsWith("[DfE ADS Classification]", StringComparison.OrdinalIgnoreCase))
+            {
+                payload = payload.Substring("[DfE ADS Classification]".Length).Trim();
+            }
+
+            var code = payload;
+            if (payload.Contains(" - "))
+            {
+                code = payload.Split(new[] { " - " }, 2, StringSplitOptions.None)[0].Trim();
+            }
+
+            var matched = _ads.FirstOrDefault(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+            var description = matched?.Description;
+            if (string.IsNullOrWhiteSpace(description) && payload.Contains(" - "))
+            {
+                description = payload.Split(new[] { " - " }, 2, StringSplitOptions.None)[1].Trim();
+            }
+
+            return (code, description ?? string.Empty);
+        }
+
+        private static string FormatAdsClassification(string code, string description)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return string.Empty;
+            var formatted = "[DfE ADS Classification] " + code.Trim();
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                formatted += " - " + description.Trim();
+            }
+
+            return formatted;
         }
     }
 }

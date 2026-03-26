@@ -350,7 +350,8 @@ namespace DfEIfcNamer.ViewModels
                 {
                     var updated = r.ApplyResult?.Updated ?? 0;
                     var skipped = r.ApplyResult?.Skipped ?? 0;
-                    Status = $"Selected rows: {selectedRows.Count}, Updated: {updated}, Types: {r.ApplyResult?.UniqueTypesUpdated ?? 0}, Instances: {r.ApplyResult?.InstancesUpdated ?? 0}, Skipped: {skipped}, Failed: {r.ApplyResult?.Failed ?? 0}";
+                    var logs = string.Join(" | ", r.ApplyResult?.Logs?.Take(3) ?? Enumerable.Empty<string>());
+                    Status = $"Selected rows: {selectedRows.Count}, Updated: {updated}, Types: {r.ApplyResult?.UniqueTypesUpdated ?? 0}, Instances: {r.ApplyResult?.InstancesUpdated ?? 0}, ExportToIFCAs: {r.ApplyResult?.ExportAsUpdated ?? 0}, Skipped: {skipped}, Failed: {r.ApplyResult?.Failed ?? 0}{(string.IsNullOrWhiteSpace(logs) ? string.Empty : " | " + logs)}";
                 }
             });
         }
@@ -359,8 +360,8 @@ namespace DfEIfcNamer.ViewModels
         {
             var dialog = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "DfE_NamingReport.csv" };
             if (dialog.ShowDialog() != true) return;
-            var lines = new[] { "ElementId,Category,CurrentIFCName,ProposedIFCName,Status" }
-                .Concat(Rows.Select(r => $"{r.ElementId},{r.Category},{r.CurrentIfcName},{r.ProposedIfcName},{r.Status}"));
+            var lines = new[] { "ElementId,Category,Family,Type,CurrentIFCName,ProposedIFCName,CurrentIFCNameType,ProposedIFCNameType,CurrentSystemName,ProposedSystemName,ProposedIfcEntity,ProposedExportToIfcAs,ProposedIfcPredefinedType,Status" }
+                .Concat(Rows.Select(r => $"{r.ElementId},{r.Category},{r.Family},{r.Type},{r.CurrentIfcName},{r.ProposedIfcName},{r.CurrentIfcTypeName},{r.ProposedIfcTypeName},{r.CurrentSystemName},{r.ProposedSystemName},{r.ProposedIfcEntity},{r.ProposedIfcExportAs},{r.ProposedIfcPredefinedType},{r.Status}"));
             File.WriteAllLines(dialog.FileName, lines);
         }
 
@@ -481,6 +482,8 @@ namespace DfEIfcNamer.ViewModels
             AdsClassifications = new ObservableCollection<AdsClassificationEntry>();
             LoadSelectionCommand = new RelayCommand(_ => Resolve());
             ResolveRoomsCommand = new RelayCommand(_ => Resolve());
+            SelectAllRowsCommand = new RelayCommand(_ => SetAllSelections(true));
+            UnselectAllRowsCommand = new RelayCommand(_ => SetAllSelections(false));
             ApplySpaceReferenceCommand = new RelayCommand(_ => ApplySpace());
             ApplyZoneNameCommand = new RelayCommand(_ => ApplyZone());
             ValidateAssignmentCommand = new RelayCommand(_ => Validate());
@@ -493,6 +496,8 @@ namespace DfEIfcNamer.ViewModels
         public SpaceZonePreviewResult LastPreview { get; private set; }
         public ICommand LoadSelectionCommand { get; }
         public ICommand ResolveRoomsCommand { get; }
+        public ICommand SelectAllRowsCommand { get; }
+        public ICommand UnselectAllRowsCommand { get; }
         public ICommand ApplySpaceReferenceCommand { get; }
         public ICommand ApplyZoneNameCommand { get; }
         public ICommand ValidateAssignmentCommand { get; }
@@ -514,8 +519,19 @@ namespace DfEIfcNamer.ViewModels
                 foreach (var zone in r.Zones ?? Enumerable.Empty<ZoneCatalogEntry>()) Zones.Add(zone);
                 AdsClassifications.Clear();
                 foreach (var ads in r.AdsClassifications ?? Enumerable.Empty<AdsClassificationEntry>()) AdsClassifications.Add(ads);
-                Status = $"Loaded {Rows.Count} valid Room/Space rows, skipped non-room/space: {r.SpaceZonePreview?.SkippedNonRoomSpaceCount ?? 0}, missing refs: {r.SpaceZonePreview?.MissingRoomCount ?? 0}";
+                Status = $"Loaded {Rows.Count} valid Room/Space rows, selected: {Rows.Count(x => x.IsSelected)}, skipped non-room/space: {r.SpaceZonePreview?.SkippedNonRoomSpaceCount ?? 0}, missing refs: {r.SpaceZonePreview?.MissingRoomCount ?? 0}";
             }});
+        }
+
+        private void SetAllSelections(bool selected)
+        {
+            foreach (var row in Rows)
+            {
+                row.IsSelected = selected;
+            }
+
+            var selectedCount = Rows.Count(x => x.IsSelected);
+            Status = $"Rows selected: {selectedCount}/{Rows.Count}.";
         }
 
         private void ApplySpace()
@@ -535,7 +551,7 @@ namespace DfEIfcNamer.ViewModels
                 {
                     var updated = r.ApplyResult?.Updated ?? 0;
                     var skipped = r.ApplyResult?.Skipped ?? 0;
-                    Status = $"SpaceReference apply - selected: {selectedRows.Count}, updated: {updated}, skipped: {skipped}";
+                    Status = $"SpaceReference apply - selected: {selectedRows.Count}, updated: {updated}, skipped: {skipped}, failed: {r.ApplyResult?.Failed ?? 0}";
                 }
             });
         }
@@ -551,6 +567,7 @@ namespace DfEIfcNamer.ViewModels
 
             foreach (var row in selectedRows) row.ProposedZoneName = ProposedZoneName;
             foreach (var row in selectedRows) row.ProposedAdsClassification = ProposedAdsClassification;
+            foreach (var row in selectedRows) row.ProposedAdsText = ProposedAdsClassification;
             _dispatcher.Raise(new RevitRequest
             {
                 Id = RevitRequestId.ApplyZoneName,
@@ -559,7 +576,7 @@ namespace DfEIfcNamer.ViewModels
                 {
                     var updated = r.ApplyResult?.Updated ?? 0;
                     var skipped = r.ApplyResult?.Skipped ?? 0;
-                    Status = $"Zone apply - selected: {selectedRows.Count}, updated: {updated}, skipped: {skipped}";
+                    Status = $"Zone apply - selected: {selectedRows.Count}, updated: {updated}, skipped: {skipped}, failed: {r.ApplyResult?.Failed ?? 0}, ADS classification updated: {r.ApplyResult?.AdsClassificationUpdated ?? 0}, ADS text updated: {r.ApplyResult?.AdsTextUpdated ?? 0}";
                 }
             });
         }
@@ -567,15 +584,20 @@ namespace DfEIfcNamer.ViewModels
         private void Validate()
         {
             var missing = Rows.Count(r => string.IsNullOrWhiteSpace(r.RoomNumber));
-            Status = $"Validation: {Rows.Count} rows, missing room references: {missing}";
+            var missingZone = Rows.Count(r => string.IsNullOrWhiteSpace(r.ProposedZoneName));
+            var missingSpaceRef = Rows.Count(r => string.IsNullOrWhiteSpace(r.ProposedSpaceReference));
+            var missingAdsCode = Rows.Count(r => string.IsNullOrWhiteSpace(r.ProposedAdsText));
+            var missingAdsDescription = Rows.Count(r => !string.IsNullOrWhiteSpace(r.ProposedAdsText) && (string.IsNullOrWhiteSpace(r.ProposedAdsClassification) || !r.ProposedAdsClassification.Contains(" - ")));
+            var mismatchedAds = Rows.Count(r => !string.IsNullOrWhiteSpace(r.ProposedAdsClassification) && !string.IsNullOrWhiteSpace(r.ProposedAdsText) && !r.ProposedAdsClassification.Contains(r.ProposedAdsText));
+            Status = $"Validation: rows={Rows.Count}, missing room refs={missing}, missing zone={missingZone}, missing space ref={missingSpaceRef}, missing ADS code={missingAdsCode}, missing ADS description={missingAdsDescription}, ADS mismatches={mismatchedAds}";
         }
 
         private void Export()
         {
             var d = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "DfE_SpaceZoneReport.csv" };
             if (d.ShowDialog() != true) return;
-            var lines = new[] { "ElementId,RoomNumber,RoomName,ProposedSpaceReference,ProposedZoneName,Status" }
-                .Concat(Rows.Select(r => $"{r.ElementId},{r.RoomNumber},{r.RoomName},{r.ProposedSpaceReference},{r.ProposedZoneName},{r.Status}"));
+            var lines = new[] { "ElementId,Category,FamilyType,Level,RoomNumber,RoomName,CurrentSpaceReference,ProposedSpaceReference,CurrentZoneName,ProposedZoneName,CurrentAdsText,ProposedAdsText,CurrentAdsClassification,ProposedAdsClassification,Status" }
+                .Concat(Rows.Select(r => $"{r.ElementId},{r.Category},{r.FamilyType},{r.Level},{r.RoomNumber},{r.RoomName},{r.CurrentSpaceReference},{r.ProposedSpaceReference},{r.CurrentZoneName},{r.ProposedZoneName},{r.CurrentAdsText},{r.ProposedAdsText},{r.CurrentAdsClassification},{r.ProposedAdsClassification},{r.Status}"));
             File.WriteAllLines(d.FileName, lines);
         }
     }

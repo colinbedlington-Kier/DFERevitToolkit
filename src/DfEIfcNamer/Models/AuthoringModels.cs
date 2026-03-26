@@ -119,6 +119,11 @@ namespace DfEIfcNamer.Models
         public int Failed { get; set; }
         public int UniqueTypesUpdated { get; set; }
         public int InstancesUpdated { get; set; }
+        public int ExportAsUpdated { get; set; }
+        public int AdsClassificationUpdated { get; set; }
+        public int AdsTextUpdated { get; set; }
+        public int CobieComponentUpdated { get; set; }
+        public int CobieTypeUpdated { get; set; }
         public IList<string> Logs { get; set; } = new List<string>();
     }
 
@@ -159,6 +164,8 @@ namespace DfEIfcNamer.Models
         public string ProposedZoneCategory { get; set; }
         public string CurrentAdsClassification { get; set; }
         public string ProposedAdsClassification { get; set; }
+        public string CurrentAdsText { get; set; }
+        public string ProposedAdsText { get; set; }
         public string Status { get; set; }
     }
 
