@@ -112,6 +112,16 @@ namespace DfEIfcNamer.Models
         public IList<string> Warnings { get; set; } = new List<string>();
     }
 
+
+    public class ParameterWriteReportRow
+    {
+        public string Scope { get; set; }
+        public string Target { get; set; }
+        public string Parameter { get; set; }
+        public string Status { get; set; }
+        public string Reason { get; set; }
+    }
+
     public class ApplyResult
     {
         public int Updated { get; set; }
@@ -125,6 +135,7 @@ namespace DfEIfcNamer.Models
         public int CobieComponentUpdated { get; set; }
         public int CobieTypeUpdated { get; set; }
         public IList<string> Logs { get; set; } = new List<string>();
+        public IList<ParameterWriteReportRow> ReportRows { get; set; } = new List<ParameterWriteReportRow>();
     }
 
     public class HeaderDataModel
@@ -137,6 +148,9 @@ namespace DfEIfcNamer.Models
         public string IfcBuildingDescription { get; set; }
         public string UPRN { get; set; }
         public string MaximumBlockHeight { get; set; }
+        public string NumberOfStoreys { get; set; }
+        public string Phase { get; set; }
+        public string BlockConstructionType { get; set; }
     }
 
     public class HeaderValidationResult
