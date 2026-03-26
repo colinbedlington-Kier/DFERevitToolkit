@@ -41,7 +41,7 @@ namespace DfEIfcNamer.Services
         private IList<RequiredParameterStatus> BuildStatusRows(Document doc, IList<ElementId> categoryIds, bool createMissing)
         {
             var sharedPath = _parameterService.ResolveSharedParameterFilePath();
-            if (!_parameterService.EnsureSharedParameterFileConfigured(doc.Application, sharedPath, out var configureError))
+            if (!ParameterService.EnsureSharedParameterFileConfigured(doc.Application, sharedPath, out var configureError))
             {
                 return ParameterBindingManifest.All().Select(m => new RequiredParameterStatus
                 {
