@@ -9,17 +9,26 @@ namespace DfEIfcNamer.Services
 {
     public class SpaceZoneService
     {
+        private readonly IList<ZoneCatalogEntry> _zones = BuiltInZoneCatalog.Default();
+        private readonly IList<AdsClassificationEntry> _ads = BuiltInAdsClassificationCatalog.Default();
+
+        public IList<ZoneCatalogEntry> GetZones() => _zones.ToList();
+        public IList<AdsClassificationEntry> GetAdsClassifications() => _ads.ToList();
+
         public SpaceZonePreviewResult BuildPreview(Document doc, SpaceZoneRequest request)
         {
             var result = new SpaceZonePreviewResult();
-            var elements = ResolveElements(doc, request?.ElementIds);
+            var elements = ResolveElements(doc, request?.ElementIds, out var skippedNonRoomSpace);
             result.SelectedCount = elements.Count;
+            result.SkippedNonRoomSpaceCount = skippedNonRoomSpace;
+            result.ValidRoomSpaceCount = elements.Count;
             foreach (var element in elements)
             {
-                var room = ResolveRoom(doc, element);
-                var roomNumber = room?.Number ?? string.Empty;
-                var roomName = room?.Name ?? string.Empty;
-                if (room == null) result.MissingRoomCount++;
+                var room = element as Room;
+                var roomNumber = room?.Number ?? Get(element, "Number");
+                var roomName = room?.Name ?? Get(element, "Name");
+                if (string.IsNullOrWhiteSpace(roomNumber)) result.MissingRoomCount++;
+                var zone = _zones.FirstOrDefault(z => string.Equals(z.Name, request?.ProposedZoneName, StringComparison.OrdinalIgnoreCase));
 
                 result.Rows.Add(new SpaceZonePreviewRow
                 {
@@ -33,7 +42,13 @@ namespace DfEIfcNamer.Services
                     ProposedSpaceReference = string.IsNullOrWhiteSpace(roomNumber) ? string.Empty : roomNumber + (string.IsNullOrWhiteSpace(roomName) ? string.Empty : " - " + roomName),
                     CurrentZoneName = Get(element, "ZoneName"),
                     ProposedZoneName = request?.ProposedZoneName ?? string.Empty,
-                    Status = room == null ? "Missing room/space" : "OK"
+                    CurrentZoneDescription = Get(element, "ZoneDescription"),
+                    ProposedZoneDescription = zone?.Description ?? string.Empty,
+                    CurrentZoneCategory = Get(element, "ZoneCategory"),
+                    ProposedZoneCategory = zone?.Category ?? string.Empty,
+                    CurrentAdsClassification = Get(element, "DfE ADS Classification"),
+                    ProposedAdsClassification = request?.ProposedAdsClassification ?? string.Empty,
+                    Status = string.IsNullOrWhiteSpace(roomNumber) ? "Missing room/space" : "OK"
                 });
             }
 
@@ -89,6 +104,9 @@ namespace DfEIfcNamer.Services
                     }
 
                     p.Set(row.ProposedZoneName ?? string.Empty);
+                    Set(element, row.ProposedZoneDescription, "ZoneDescription");
+                    Set(element, row.ProposedZoneCategory, "ZoneCategory");
+                    Set(element, row.ProposedAdsClassification, "DfE ADS Classification");
                     result.Updated++;
                 }
 
@@ -115,14 +133,24 @@ namespace DfEIfcNamer.Services
             return null;
         }
 
-        private static IList<Element> ResolveElements(Document doc, IEnumerable<long> ids)
+        private static IList<Element> ResolveElements(Document doc, IEnumerable<long> ids, out int skippedNonRoomSpace)
         {
+            skippedNonRoomSpace = 0;
+            Func<Element, bool> valid = e =>
+            {
+                var bic = (BuiltInCategory)e.Category.Id.IntegerValue;
+                return bic == BuiltInCategory.OST_Rooms || bic == BuiltInCategory.OST_MEPSpaces;
+            };
             if (ids != null && ids.Any())
             {
-                return ids.Select(id => doc.GetElement(new ElementId(id))).Where(e => e != null).ToList();
+                var selected = ids.Select(id => doc.GetElement(new ElementId(id))).Where(e => e != null && e.Category != null).ToList();
+                skippedNonRoomSpace = selected.Count(e => !valid(e));
+                return selected.Where(valid).ToList();
             }
 
-            return new FilteredElementCollector(doc).WhereElementIsNotElementType().Where(e => e.Category != null).Take(5000).ToList();
+            var all = new FilteredElementCollector(doc).WhereElementIsNotElementType().Where(e => e.Category != null).Take(5000).ToList();
+            skippedNonRoomSpace = all.Count(e => !valid(e));
+            return all.Where(valid).ToList();
         }
 
         private static string BuildFamilyType(Document doc, Element element)
@@ -134,5 +162,10 @@ namespace DfEIfcNamer.Services
         }
 
         private static string Get(Element element, string parameterName) => element?.LookupParameter(parameterName)?.AsString() ?? string.Empty;
+        private static void Set(Element element, string value, string parameterName)
+        {
+            var p = element?.LookupParameter(parameterName);
+            if (p != null && !p.IsReadOnly) p.Set(value ?? string.Empty);
+        }
     }
 }
