@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Windows.Input;
+using System.Windows;
 using Autodesk.Revit.DB;
 using DfEIfcNamer.Commands;
 using DfEIfcNamer.ExternalEvents;
@@ -62,6 +63,7 @@ namespace DfEIfcNamer.ViewModels
             LoadNamingCodeMapCommand = new RelayCommand(_ => LoadNamingCodes());
             LoadSystemListCommand = new RelayCommand(_ => LoadSystems());
             ExportSetupReportCommand = new RelayCommand(_ => ExportReport());
+            CopyDebugReportCommand = new RelayCommand(_ => CopyDebugReport());
             Status = "Not checked";
             LoadCategories();
         }
@@ -74,6 +76,7 @@ namespace DfEIfcNamer.ViewModels
         public ICommand LoadNamingCodeMapCommand { get; }
         public ICommand LoadSystemListCommand { get; }
         public ICommand ExportSetupReportCommand { get; }
+        public ICommand CopyDebugReportCommand { get; }
         public SetupCheckResult LastResult { get; private set; }
 
         private string _status;
@@ -84,6 +87,9 @@ namespace DfEIfcNamer.ViewModels
 
         private string _systemListStatus = "System list: embedded";
         public string SystemListStatus { get => _systemListStatus; set { _systemListStatus = value; RaisePropertyChanged(); } }
+        private string _debugStatus = "Debug: awaiting setup check.";
+        public string DebugStatus { get => _debugStatus; set { _debugStatus = value; RaisePropertyChanged(); } }
+        public ObservableCollection<string> DebugLines { get; } = new ObservableCollection<string>();
 
         private void LoadCategories()
         {
@@ -104,7 +110,15 @@ namespace DfEIfcNamer.ViewModels
             {
                 Id = RevitRequestId.CheckAuthoringSetup,
                 CategoryIds = Categories.Where(c => c.IsSelected).Select(c => new ElementId(c.Id)).ToList(),
-                Callback = r => ApplyResult(r.AuthoringSetup)
+                Callback = r =>
+                {
+                    if (!string.IsNullOrWhiteSpace(r.Error))
+                    {
+                        Log.Add("Setup check error: " + r.Error);
+                    }
+
+                    ApplyResult(r.AuthoringSetup ?? new SetupCheckResult { Status = "Error", Notes = r.Error ?? "Unknown setup error." });
+                }
             });
         }
 
@@ -114,7 +128,15 @@ namespace DfEIfcNamer.ViewModels
             {
                 Id = RevitRequestId.CreateAuthoringParameters,
                 CategoryIds = Categories.Where(c => c.IsSelected).Select(c => new ElementId(c.Id)).ToList(),
-                Callback = r => ApplyResult(r.AuthoringSetup)
+                Callback = r =>
+                {
+                    if (!string.IsNullOrWhiteSpace(r.Error))
+                    {
+                        Log.Add("Create parameters error: " + r.Error);
+                    }
+
+                    ApplyResult(r.AuthoringSetup ?? new SetupCheckResult { Status = "Error", Notes = r.Error ?? "Unknown create error." });
+                }
             });
         }
 
@@ -129,6 +151,7 @@ namespace DfEIfcNamer.ViewModels
                 Callback = r =>
                 {
                     NamingCodeStatus = $"Naming map entries: {r.NamingCodes?.Count ?? 0}";
+                    if (!string.IsNullOrWhiteSpace(r.Error)) Log.Add("Error loading naming map: " + r.Error);
                     Log.Add("Loaded naming code map.");
                 }
             });
@@ -145,6 +168,7 @@ namespace DfEIfcNamer.ViewModels
                 Callback = r =>
                 {
                     SystemListStatus = $"Systems loaded: {r.Systems?.Count ?? 0}";
+                    if (!string.IsNullOrWhiteSpace(r.Error)) Log.Add("Error loading systems: " + r.Error);
                     Log.Add("Loaded system list.");
                 }
             });
@@ -166,7 +190,33 @@ namespace DfEIfcNamer.ViewModels
             Status = $"{setup?.Status ?? "Error"}: {setup?.Notes}";
             ParameterStatuses.Clear();
             foreach (var row in setup?.Parameters ?? Enumerable.Empty<RequiredParameterStatus>()) ParameterStatuses.Add(row);
+            DebugLines.Clear();
+            DebugLines.Add($"Manifest loaded: {(setup?.ManifestLoaded == true ? "Y" : "N")} ({setup?.ManifestSource ?? "unknown"})");
+            DebugLines.Add($"Shared parameter loaded: {(setup?.SharedParameterFileLoaded == true ? "Y" : "N")} ({setup?.SharedParameterSource ?? "unknown"})");
+            DebugLines.Add($"Naming map source: {setup?.NamingCodesSource ?? "n/a"}");
+            DebugLines.Add($"Systems source: {setup?.SystemsSource ?? "n/a"}");
+            DebugLines.Add($"Manifest entries: {setup?.ManifestEntriesCount ?? 0}");
+            DebugLines.Add($"Shared definitions parsed: {setup?.SharedParameterDefinitionsCount ?? 0}");
+            DebugLines.Add($"Manifest/shared matches: {setup?.MatchedSharedParameterDefinitionsCount ?? 0}");
+            DebugLines.Add($"Projected setup rows: {setup?.ProjectedRowsCount ?? 0}");
+            foreach (var ex in setup?.Exceptions ?? Enumerable.Empty<string>()) DebugLines.Add("Exception: " + ex);
+            foreach (var rowErr in setup?.RowLevelErrors ?? Enumerable.Empty<string>()) DebugLines.Add("Row error: " + rowErr);
+            DebugStatus = DebugLines.Any(x => x.StartsWith("Exception:") || x.StartsWith("Row error:")) ? "Debug: failures detected." : "Debug: no setup exceptions detected.";
             if (!string.IsNullOrWhiteSpace(Status)) Log.Add(Status);
+        }
+
+        private void CopyDebugReport()
+        {
+            try
+            {
+                var report = string.Join(Environment.NewLine, DebugLines);
+                Clipboard.SetText(report);
+                Log.Add("Debug report copied to clipboard.");
+            }
+            catch (Exception ex)
+            {
+                Log.Add("Copy debug report failed: " + ex.Message);
+            }
         }
     }
 
@@ -217,6 +267,8 @@ namespace DfEIfcNamer.ViewModels
         public bool UseFallbackCode { get; set; } = true;
         public string FallbackCode { get; set; }
         public string SelectedSystemName { get; set; }
+        public bool AddAsNewSystem { get; set; } = true;
+        public bool AppendToExistingSystem { get; set; }
         public int TypeNumberWidth { get; set; }
         public bool AllowDoorWindowUnassignedFallback { get; set; }
 
@@ -256,7 +308,9 @@ namespace DfEIfcNamer.ViewModels
                 FallbackCode = FallbackCode,
                 TypeNumberWidth = TypeNumberWidth <= 0 ? 2 : TypeNumberWidth,
                 SelectedSystemName = SelectedSystemName,
-                AllowDoorWindowUnassignedFallback = AllowDoorWindowUnassignedFallback
+                AllowDoorWindowUnassignedFallback = AllowDoorWindowUnassignedFallback,
+                AddAsNewSystem = AddAsNewSystem,
+                AppendToExistingSystem = AppendToExistingSystem
             };
 
             _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.GenerateNamingPreview, NamingRequest = request, Callback = r => ApplyPreview(r.NamingPreview) });

@@ -13,14 +13,16 @@ namespace DfEIfcNamer.Services
         private readonly NamingCodeRegistryService _codeRegistry;
         private readonly SystemRegistryService _systemRegistry;
         private readonly SpaceZoneService _spaceZoneService;
+        private readonly IfcDefaultsResolverService _ifcDefaults;
         private readonly InstanceParameterWriter _instanceWriter = new InstanceParameterWriter();
         private readonly TypeParameterWriter _typeWriter = new TypeParameterWriter();
 
-        public AuthoringNamingService(NamingCodeRegistryService codeRegistry, SystemRegistryService systemRegistry, SpaceZoneService spaceZoneService)
+        public AuthoringNamingService(NamingCodeRegistryService codeRegistry, SystemRegistryService systemRegistry, SpaceZoneService spaceZoneService, IfcDefaultsResolverService ifcDefaults)
         {
             _codeRegistry = codeRegistry;
             _systemRegistry = systemRegistry;
             _spaceZoneService = spaceZoneService;
+            _ifcDefaults = ifcDefaults;
         }
 
         public NamingPreviewResult GeneratePreview(Document doc, NamingGenerationRequest request)
@@ -35,6 +37,7 @@ namespace DfEIfcNamer.Services
             var instanceCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var doorRoomCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var windowRoomCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var systemCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var element in sorted)
             {
@@ -53,9 +56,11 @@ namespace DfEIfcNamer.Services
                 row.Type = typeElement?.Name ?? string.Empty;
                 row.CurrentIfcTypeName = Get(typeElement, "IFCName [Type]", "IFCName[Type]");
 
-                var ifcClass = NormalizeIfcClass(typeElement, row.Category);
+                var resolved = _ifcDefaults.ResolveDefaults(row.Category, row.Family, row.Type);
+                var ifcClass = NormalizeIfcClass(typeElement, row.Category, resolved.Entity);
                 var predefinedRaw = Get(typeElement, "IFC Predefined Type", "DfE_IFCPredefinedType", "IFC_Predefined_Type");
-                var predefinedSchema = NormalizeSchemaToken(predefinedRaw, request.FallbackPredefinedType);
+                var resolvedRaw = string.IsNullOrWhiteSpace(predefinedRaw) ? resolved.PredefinedType : predefinedRaw;
+                var predefinedSchema = NormalizeSchemaToken(resolvedRaw, request.FallbackPredefinedType);
                 var predefinedDisplay = ToPascalCase(predefinedSchema);
                 var predefined = predefinedDisplay;
                 var typeIdentityKey = $"{row.Family}_{row.Type}_{ifcClass}_{predefined}";
@@ -71,15 +76,18 @@ namespace DfEIfcNamer.Services
                 }
                 row.ProposedIfcTypeName = proposedTypeName;
                 row.ProposedIfcExportAs = "Ifc" + ifcClass;
+                row.ProposedIfcEntity = ifcClass;
                 row.ProposedIfcPredefinedType = predefinedSchema;
+                row.ProposedUserDefinedPredefinedType = predefinedSchema == "USERDEFINED" ? (resolved.UserDefinedValue ?? string.Empty) : string.Empty;
 
                 row.ProposedIfcName = BuildInstanceName(doc, element, ifcClass, predefined, request, instanceCounter, doorRoomCounter, windowRoomCounter, out var status);
                 row.Status = status;
                 row.Eligible = status == "OK" || status.StartsWith("WARN");
 
                 var selectedSystem = _systemRegistry.Find(request.SelectedSystemName);
-                row.ProposedSystemName = selectedSystem?.SystemName ?? string.Empty;
-                row.ProposedSystemDescription = selectedSystem?.SystemDescription ?? string.Empty;
+                var systemBase = selectedSystem?.SystemName ?? request.SelectedSystemName ?? string.Empty;
+                row.ProposedSystemName = BuildSystemName(systemBase, row.Category, request, systemCounter);
+                row.ProposedSystemDescription = selectedSystem?.SystemDescription ?? (string.IsNullOrWhiteSpace(systemBase) ? string.Empty : $"Generated for {systemBase}");
 
                 if (selectedSystem != null && !_systemRegistry.IsCompatible(selectedSystem, row.Category, ifcClass))
                 {
@@ -92,6 +100,10 @@ namespace DfEIfcNamer.Services
             result.EligibleCount = result.Rows.Count(r => r.Eligible);
             result.SkippedCount = result.Rows.Count(r => !r.Eligible);
             result.ErrorCount = result.Rows.Count(r => r.Status.Contains("ERR"));
+            result.ResolvedIfcEntityCount = result.Rows.Count(r => !string.IsNullOrWhiteSpace(r.ProposedIfcEntity));
+            result.ResolvedPredefinedTypeCount = result.Rows.Count(r => !string.IsNullOrWhiteSpace(r.ProposedIfcPredefinedType));
+            result.UserDefinedFallbackCount = result.Rows.Count(r => string.Equals(r.ProposedIfcPredefinedType, "USERDEFINED", StringComparison.OrdinalIgnoreCase));
+            result.UnresolvedCount = result.Rows.Count(r => string.IsNullOrWhiteSpace(r.ProposedIfcEntity) || string.IsNullOrWhiteSpace(r.ProposedIfcPredefinedType));
 
             var duplicates = result.Rows
                 .Where(r => !string.IsNullOrWhiteSpace(r.ProposedIfcName))
@@ -142,6 +154,7 @@ namespace DfEIfcNamer.Services
                         {
                             _instanceWriter.Write(element, row.ProposedSystemName, "SystemName");
                             _instanceWriter.Write(element, row.ProposedSystemDescription, "SystemDescription");
+                            _instanceWriter.Write(element, row.Category, "SystemCategory");
                         }
 
                         if (applyType)
@@ -159,10 +172,11 @@ namespace DfEIfcNamer.Services
                             {
                                 _typeWriter.Write(type, row.ProposedIfcTypeName, "IFCName [Type]", "IFCName[Type]");
                                 _typeWriter.Write(type, row.ProposedIfcTypeName, "IfcName[Type]");
-                                _typeWriter.Write(type, row.ProposedIfcExportAs, "IfcExportAs", "IFC Export As");
-                                _typeWriter.Write(type, row.ProposedIfcPredefinedType, "IFC Predefined Type", "DfE_IFCPredefinedType");
-                                _typeWriter.Write(type, row.ProposedIfcPredefinedType, "DfE_IFCPredefinedType");
-                                _typeWriter.Write(type, row.ProposedIfcExportAs?.Replace("Ifc", string.Empty), "DfE_IFCEntity");
+                            _typeWriter.Write(type, row.ProposedIfcExportAs, "IfcExportAs", "IFC Export As");
+                            _typeWriter.Write(type, row.ProposedIfcPredefinedType, "IFC Predefined Type", "DfE_IFCPredefinedType");
+                            _typeWriter.Write(type, row.ProposedIfcPredefinedType, "DfE_IFCPredefinedType");
+                                _typeWriter.Write(type, row.ProposedIfcEntity, "DfE_IFCEntity");
+                                _typeWriter.Write(type, row.ProposedUserDefinedPredefinedType, "DfE_UserDefinedPredefinedTypeValue");
                                 result.UniqueTypesUpdated++;
                             }
                         }
@@ -305,12 +319,17 @@ namespace DfEIfcNamer.Services
             }
         }
 
-        private static string NormalizeIfcClass(ElementType type, string fallbackCategory)
+        private static string NormalizeIfcClass(ElementType type, string fallbackCategory, string resolverSuggestion)
         {
             var exportAs = Get(type, "IfcExportAs", "IFC Export As");
             if (!string.IsNullOrWhiteSpace(exportAs))
             {
                 return NormalizeToken(exportAs.Replace("Ifc", string.Empty), "Undefined");
+            }
+
+            if (!string.IsNullOrWhiteSpace(resolverSuggestion))
+            {
+                return NormalizeToken(resolverSuggestion, "Undefined");
             }
 
             return NormalizeToken(fallbackCategory?.Replace(" ", string.Empty), "Undefined");
@@ -342,6 +361,18 @@ namespace DfEIfcNamer.Services
             if (string.IsNullOrWhiteSpace(current)) return add;
             if (current.Contains(add)) return current;
             return current + "; " + add;
+        }
+
+        private static string BuildSystemName(string baseName, string category, NamingGenerationRequest request, IDictionary<string, int> systemCounter)
+        {
+            if (string.IsNullOrWhiteSpace(baseName)) return string.Empty;
+            if (!request.AddAsNewSystem && request.AppendToExistingSystem) return baseName;
+
+            var normalizedBase = Sanitize(baseName.Replace(" ", "_"));
+            var key = $"{normalizedBase}::{category}";
+            if (!systemCounter.ContainsKey(key)) systemCounter[key] = 0;
+            systemCounter[key]++;
+            return $"{normalizedBase}_System{systemCounter[key]:00}";
         }
     }
 }
