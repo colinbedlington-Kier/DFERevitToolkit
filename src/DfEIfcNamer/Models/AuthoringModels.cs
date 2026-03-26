@@ -48,6 +48,9 @@ namespace DfEIfcNamer.Models
         public bool ManifestLoaded { get; set; }
         public bool SharedParameterFileLoaded { get; set; }
         public int ManifestEntriesCount { get; set; }
+        public int ManifestTotalRowsCount { get; set; }
+        public int ManifestParsedRowsCount { get; set; }
+        public int ManifestFailedRowsCount { get; set; }
         public int SharedParameterDefinitionsCount { get; set; }
         public int MatchedSharedParameterDefinitionsCount { get; set; }
         public int ProjectedRowsCount { get; set; }

@@ -191,11 +191,13 @@ namespace DfEIfcNamer.ViewModels
             ParameterStatuses.Clear();
             foreach (var row in setup?.Parameters ?? Enumerable.Empty<RequiredParameterStatus>()) ParameterStatuses.Add(row);
             DebugLines.Clear();
-            DebugLines.Add($"Manifest loaded: {(setup?.ManifestLoaded == true ? "Y" : "N")} ({setup?.ManifestSource ?? "unknown"})");
+            DebugLines.Add($"Manifest loaded: {(setup?.ManifestLoaded == true ? "Yes" : "No")} ({setup?.ManifestTotalRowsCount ?? 0} rows)");
+            DebugLines.Add($"Manifest parsed: {setup?.ManifestParsedRowsCount ?? 0} OK, {setup?.ManifestFailedRowsCount ?? 0} failed");
+            DebugLines.Add($"Manifest source: {setup?.ManifestSource ?? "unknown"}");
             DebugLines.Add($"Shared parameter loaded: {(setup?.SharedParameterFileLoaded == true ? "Y" : "N")} ({setup?.SharedParameterSource ?? "unknown"})");
             DebugLines.Add($"Naming map source: {setup?.NamingCodesSource ?? "n/a"}");
             DebugLines.Add($"Systems source: {setup?.SystemsSource ?? "n/a"}");
-            DebugLines.Add($"Manifest entries: {setup?.ManifestEntriesCount ?? 0}");
+            DebugLines.Add($"Manifest entries mapped: {setup?.ManifestEntriesCount ?? 0}");
             DebugLines.Add($"Shared definitions parsed: {setup?.SharedParameterDefinitionsCount ?? 0}");
             DebugLines.Add($"Manifest/shared matches: {setup?.MatchedSharedParameterDefinitionsCount ?? 0}");
             DebugLines.Add($"Projected setup rows: {setup?.ProjectedRowsCount ?? 0}");
