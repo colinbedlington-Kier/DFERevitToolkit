@@ -848,6 +848,68 @@ namespace DfEIfcNamer.Services
             return result;
         }
 
+        public SyncResult ApplyInitialCobieMappings(Document doc, IList<long> categoryIds)
+        {
+            var result = new SyncResult();
+            var categories = GetModelCategories(doc, categoryIds?.Select(id => new ElementId(id)).ToList());
+            var categorySet = new HashSet<long>(categories.Select(c => c.Id.Value));
+            var instances = new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Where(e => e.Category != null && categorySet.Contains(e.Category.Id.Value))
+                .ToList();
+            var types = new FilteredElementCollector(doc)
+                .WhereElementIsElementType()
+                .Where(e => e.Category != null && categorySet.Contains(e.Category.Id.Value))
+                .ToList();
+
+            var ruleStats = new Dictionary<string, (int Updated, int Skipped, int Failed)>();
+            void Count(string rule, int updated = 0, int skipped = 0, int failed = 0)
+            {
+                if (!ruleStats.ContainsKey(rule)) ruleStats[rule] = (0, 0, 0);
+                var current = ruleStats[rule];
+                ruleStats[rule] = (current.Updated + updated, current.Skipped + skipped, current.Failed + failed);
+            }
+
+            using (var tg = new TransactionGroup(doc, "DfE IFC Namer - COBie Initial Sync"))
+            {
+                tg.Start();
+                using (var tx = new Transaction(doc, "Sync COBie component/type mappings"))
+                {
+                    tx.Start();
+                    foreach (var element in instances)
+                    {
+                        ApplyCopyRule(element, "IfcName -> Cobie.Component.Name", new[] { "IFCName", "IfcName" }, new[] { "COBie.Component.Name", "Cobie.Component.Name" }, false, ref result, Count);
+                        ApplyCopyRule(element, "IfcDescription -> Cobie.Component.Description", new[] { "IfcDescription" }, new[] { "COBie.Component.Description", "Cobie.Component.Description" }, false, ref result, Count);
+                    }
+
+                    foreach (var type in types)
+                    {
+                        ApplyCopyRule(type, "IfcName[Type] -> Cobie.Type.Name", new[] { "IFCName [Type]", "IFCName[Type]", "IfcName[Type]" }, new[] { "COBie.Type.Name", "Cobie.Type.Name" }, true, ref result, Count);
+                        ApplyCopyRule(type, "IfcDescription[Type] -> Cobie.Type.Description", new[] { "IfcDescription[Type]" }, new[] { "COBie.Type.Description", "Cobie.Type.Description" }, true, ref result, Count);
+                        ApplyCombinedRule(type, "Uniclass.Pr -> Cobie.Type.Category",
+                            new[] { "Classification.Uniclass.Pr.Number" },
+                            new[] { "Classification.Uniclass.Pr.Description" },
+                            new[] { "COBie.Type.Category", "Cobie.Type.Category" },
+                            ref result, Count);
+                    }
+
+                    tx.Commit();
+                }
+                tg.Assimilate();
+            }
+
+            foreach (var kvp in ruleStats.OrderBy(k => k.Key))
+            {
+                result.Logs.Add(new SyncLogEntry
+                {
+                    Severity = "Info",
+                    Message = $"{kvp.Key}: updated={kvp.Value.Updated}, skipped={kvp.Value.Skipped}, failed={kvp.Value.Failed}"
+                });
+            }
+
+            return result;
+        }
+
         private SetupStatus BuildStatusSkeleton()
         {
             return new SetupStatus
@@ -1372,6 +1434,95 @@ namespace DfEIfcNamer.Services
                 result.InstancesSkipped += skipped;
                 result.InstancesFailed += failed;
             }
+        }
+
+        private static void ApplyCopyRule(
+            Element element,
+            string ruleName,
+            string[] sourceAliases,
+            string[] targetAliases,
+            bool isType,
+            ref SyncResult result,
+            Action<string, int, int, int> counter)
+        {
+            var source = LookupParameter(element, sourceAliases);
+            var target = LookupParameter(element, targetAliases);
+            if (source == null || target == null)
+            {
+                AddCounters(result, isType, skipped: 1);
+                counter(ruleName, skipped: 1);
+                result.Logs.Add(new SyncLogEntry { Severity = "Warning", Message = $"{element.Id}: missing mapping parameter for rule '{ruleName}'." });
+                return;
+            }
+
+            var sourceValue = source.AsString();
+            if (string.IsNullOrWhiteSpace(sourceValue))
+            {
+                AddCounters(result, isType, skipped: 1);
+                counter(ruleName, skipped: 1);
+                return;
+            }
+
+            if (target.IsReadOnly)
+            {
+                AddCounters(result, isType, failed: 1);
+                counter(ruleName, failed: 1);
+                return;
+            }
+
+            target.Set(sourceValue);
+            AddCounters(result, isType, updated: 1);
+            counter(ruleName, updated: 1);
+        }
+
+        private static void ApplyCombinedRule(
+            Element element,
+            string ruleName,
+            string[] sourceNumberAliases,
+            string[] sourceDescriptionAliases,
+            string[] targetAliases,
+            ref SyncResult result,
+            Action<string, int, int, int> counter)
+        {
+            var sourceNumber = LookupParameter(element, sourceNumberAliases)?.AsString();
+            var sourceDescription = LookupParameter(element, sourceDescriptionAliases)?.AsString();
+            var target = LookupParameter(element, targetAliases);
+            if (target == null)
+            {
+                AddCounters(result, true, skipped: 1);
+                counter(ruleName, skipped: 1);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceNumber) && string.IsNullOrWhiteSpace(sourceDescription))
+            {
+                AddCounters(result, true, skipped: 1);
+                counter(ruleName, skipped: 1);
+                return;
+            }
+
+            if (target.IsReadOnly)
+            {
+                AddCounters(result, true, failed: 1);
+                counter(ruleName, failed: 1);
+                return;
+            }
+
+            var value = string.IsNullOrWhiteSpace(sourceDescription) ? sourceNumber : $"{sourceNumber} : {sourceDescription}";
+            target.Set(value);
+            AddCounters(result, true, updated: 1);
+            counter(ruleName, updated: 1);
+        }
+
+        private static Parameter LookupParameter(Element element, IEnumerable<string> aliases)
+        {
+            foreach (var name in aliases ?? Enumerable.Empty<string>())
+            {
+                var parameter = element?.LookupParameter(name);
+                if (parameter != null) return parameter;
+            }
+
+            return null;
         }
 
         private static bool IsParameterBound(Document doc, IEnumerable<string> parameterNames, bool isType, IList<Category> categories)

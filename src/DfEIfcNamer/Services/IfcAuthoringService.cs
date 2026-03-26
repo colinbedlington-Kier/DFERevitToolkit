@@ -87,8 +87,17 @@ namespace DfEIfcNamer.Services
         {
             _diagnostics.AddInfo("Authoring.Setup", "Loading system list.", new { path = path ?? "embedded" });
             var entries = string.IsNullOrWhiteSpace(path) ? _templateConfig.LoadEmbeddedSystems() : _templateConfig.LoadSystemsFromPath(path);
+            var loadedCount = entries?.Count ?? 0;
             if (entries.Any()) _systemRegistry.SetEntries(entries);
-            return _systemRegistry.GetEntries();
+            var bound = _systemRegistry.GetEntries();
+            var boundCount = bound.Count;
+            _diagnostics.AddInfo("Authoring.Setup", "System list loaded and bound.", new
+            {
+                loadedCount,
+                boundCount,
+                filteredOut = Math.Max(0, loadedCount - boundCount)
+            });
+            return bound;
         }
 
         public NamingPreviewResult GenerateNamingPreview(Document doc, NamingGenerationRequest request)
@@ -134,17 +143,8 @@ namespace DfEIfcNamer.Services
 
         public SyncResult SyncCobie(Document doc)
         {
-            _diagnostics.AddInfo("Authoring.COBie", "Running COBie sync with fixed IFC mappings.");
-            return _cobieSync.ApplySync(doc, new MappingSettings
-            {
-                InstanceSource = "IFCName",
-                InstanceTarget = "COBie.Component.Name",
-                TypeSource = "IFCName [Type]",
-                TypeTarget = "COBie.Type.Name",
-                Scope = SyncScope.EntireModel,
-                OverwriteMode = OverwriteMode.BlankOnly,
-                CategoryIds = _cobieSync.GetModelCategories(doc).Select(c => c.Id.Value).ToList()
-            });
+            _diagnostics.AddInfo("Authoring.COBie", "Running initial COBie sync mappings.");
+            return _cobieSync.ApplyInitialCobieMappings(doc, _cobieSync.GetModelCategories(doc).Select(c => c.Id.Value).ToList());
         }
 
         public ValidationSummary BuildValidationSummary(Document doc, SetupCheckResult setup, NamingPreviewResult naming, HeaderValidationResult header, SpaceZonePreviewResult space)

@@ -50,8 +50,7 @@ namespace DfEIfcNamer.Services
             {
                 return ParseSystemsCsv(File.ReadAllLines(path));
             }
-
-            return JsonSerializer.Deserialize<List<SystemRegistryEntry>>(File.ReadAllText(path), JsonOptions()) ?? new List<SystemRegistryEntry>();
+            return ParseSystemsJson(File.ReadAllText(path));
         }
 
         public void SaveHeaderTemplate(string path, HeaderDataModel model)
@@ -88,18 +87,96 @@ namespace DfEIfcNamer.Services
 
         private static IList<SystemRegistryEntry> ParseSystemsCsv(IEnumerable<string> lines)
         {
-            return lines.Skip(1)
+            var allLines = lines?.ToList() ?? new List<string>();
+            if (allLines.Count < 2) return new List<SystemRegistryEntry>();
+            var headers = allLines[0].Split(',').Select(h => h.Trim()).ToList();
+            int HeaderIndex(params string[] names) =>
+                headers.FindIndex(h => names.Any(n => string.Equals(h, n, StringComparison.OrdinalIgnoreCase)));
+
+            var nameIx = HeaderIndex("SystemName", "Name", "System");
+            var descIx = HeaderIndex("SystemDescription", "Description");
+            var disciplineIx = HeaderIndex("Discipline");
+            var categoriesIx = HeaderIndex("AllowedCategories", "Categories");
+            var ifcIx = HeaderIndex("AllowedIfcClasses", "IfcClasses");
+
+            return allLines.Skip(1)
                 .Select(line => line.Split(','))
-                .Where(parts => parts.Length >= 2)
+                .Where(parts => parts.Length >= 1)
                 .Select(parts => new SystemRegistryEntry
                 {
-                    SystemName = parts[0].Trim(),
-                    SystemDescription = parts[1].Trim(),
-                    Discipline = parts.Length >= 3 ? parts[2].Trim() : string.Empty,
-                    AllowedCategories = parts.Length >= 4 ? parts[3].Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList() : new List<string>(),
-                    AllowedIfcClasses = parts.Length >= 5 ? parts[4].Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList() : new List<string>()
+                    SystemName = Read(parts, nameIx),
+                    SystemDescription = Read(parts, descIx),
+                    Discipline = Read(parts, disciplineIx),
+                    AllowedCategories = SplitList(Read(parts, categoriesIx)),
+                    AllowedIfcClasses = SplitList(Read(parts, ifcIx))
                 })
+                .Where(x => !string.IsNullOrWhiteSpace(x.SystemName))
                 .ToList();
+        }
+
+        private static IList<SystemRegistryEntry> ParseSystemsJson(string json)
+        {
+            var entries = new List<SystemRegistryEntry>();
+            using (var doc = JsonDocument.Parse(json))
+            {
+                if (doc.RootElement.ValueKind != JsonValueKind.Array) return entries;
+                foreach (var row in doc.RootElement.EnumerateArray())
+                {
+                    var name = Read(row, "SystemName", "Name", "System");
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    entries.Add(new SystemRegistryEntry
+                    {
+                        SystemName = name,
+                        SystemDescription = Read(row, "SystemDescription", "Description"),
+                        Discipline = Read(row, "Discipline"),
+                        AllowedCategories = ReadArray(row, "AllowedCategories", "Categories"),
+                        AllowedIfcClasses = ReadArray(row, "AllowedIfcClasses", "IfcClasses")
+                    });
+                }
+            }
+
+            return entries;
+        }
+
+        private static string Read(string[] parts, int index) => index >= 0 && index < parts.Length ? parts[index].Trim() : string.Empty;
+        private static List<string> SplitList(string text) =>
+            string.IsNullOrWhiteSpace(text)
+                ? new List<string>()
+                : text.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList();
+
+        private static string Read(JsonElement row, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (row.TryGetProperty(name, out var value))
+                {
+                    return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static List<string> ReadArray(JsonElement row, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (!row.TryGetProperty(name, out var value)) continue;
+                if (value.ValueKind == JsonValueKind.Array)
+                {
+                    return value.EnumerateArray()
+                        .Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() : x.ToString())
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .ToList();
+                }
+
+                if (value.ValueKind == JsonValueKind.String)
+                {
+                    return SplitList(value.GetString());
+                }
+            }
+
+            return new List<string>();
         }
     }
 }
