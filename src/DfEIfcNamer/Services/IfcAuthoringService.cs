@@ -8,26 +8,6 @@ namespace DfEIfcNamer.Services
 {
     public class IfcAuthoringService
     {
-        private static readonly (string Name, string Scope, bool IsType)[] RequiredParameters =
-        {
-            ("IFCName", "Instance", false),
-            ("IFCDescription", "Instance", false),
-            ("SystemName", "Instance", false),
-            ("SystemDescription", "Instance", false),
-            ("ZoneName", "Instance", false),
-            ("SpaceReference", "Instance", false),
-            ("IFCName [Type]", "Type", true),
-            ("TypeDescription", "Type", true),
-            ("IfcProjectName", "Project", false),
-            ("IfcProjectDescription", "Project", false),
-            ("IfcSiteName", "Project", false),
-            ("IfcSiteDescription", "Project", false),
-            ("IfcBuildingName", "Project", false),
-            ("IfcBuildingDescription", "Project", false),
-            ("UPRN", "Project", false),
-            ("MaximumBlockHeight", "Project", false)
-        };
-
         private readonly CobieSyncService _cobieSync;
         private readonly TemplateConfigService _templateConfig;
         private readonly NamingCodeRegistryService _codeRegistry;
@@ -37,6 +17,8 @@ namespace DfEIfcNamer.Services
         private readonly SpaceZoneService _spaceZone;
         private readonly ValidationService _validation;
         private readonly DiagnosticsCollectorService _diagnostics;
+        private readonly AuthoringParameterSetupService _setupService;
+        private readonly ClassificationSyncService _classificationSync;
 
         public IfcAuthoringService(
             CobieSyncService cobieSync,
@@ -47,7 +29,9 @@ namespace DfEIfcNamer.Services
             IfcHeaderService header,
             SpaceZoneService spaceZone,
             ValidationService validation,
-            DiagnosticsCollectorService diagnostics)
+            DiagnosticsCollectorService diagnostics,
+            AuthoringParameterSetupService setupService,
+            ClassificationSyncService classificationSync)
         {
             _cobieSync = cobieSync;
             _templateConfig = templateConfig;
@@ -58,6 +42,8 @@ namespace DfEIfcNamer.Services
             _spaceZone = spaceZone;
             _validation = validation;
             _diagnostics = diagnostics;
+            _setupService = setupService;
+            _classificationSync = classificationSync;
 
             _codeRegistry.SetEntries(_templateConfig.LoadEmbeddedNamingCodes());
             _systemRegistry.SetEntries(_templateConfig.LoadEmbeddedSystems());
@@ -66,57 +52,20 @@ namespace DfEIfcNamer.Services
         public SetupCheckResult CheckSetup(Document doc, IList<ElementId> categoryIds)
         {
             _diagnostics.AddInfo("Authoring.Setup", "Checking setup state.");
-            var result = new SetupCheckResult { Status = "Ready" };
-            var instanceNames = _cobieSync.GetStringParameters(doc, false).Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var typeNames = _cobieSync.GetStringParameters(doc, true).Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var param in RequiredParameters)
-            {
-                bool exists;
-                bool writable = false;
-                var notes = string.Empty;
-                if (param.Scope == "Project")
-                {
-                    var projectParam = doc.ProjectInformation.LookupParameter(param.Name);
-                    exists = projectParam != null;
-                    writable = projectParam != null && !projectParam.IsReadOnly;
-                    if (!exists) notes = "Missing project parameter";
-                }
-                else if (param.IsType)
-                {
-                    exists = typeNames.Contains(param.Name) || (param.Name == "IFCName [Type]" && typeNames.Contains("IFCName[Type]"));
-                    writable = exists;
-                    if (!exists) notes = "Missing type binding";
-                }
-                else
-                {
-                    exists = instanceNames.Contains(param.Name);
-                    writable = exists;
-                    if (!exists) notes = "Missing instance binding";
-                }
-
-                if (!exists) result.Status = "Warning";
-
-                result.Parameters.Add(new RequiredParameterStatus
-                {
-                    ParameterName = param.Name,
-                    Scope = param.Scope,
-                    Exists = exists,
-                    Writable = writable,
-                    Notes = notes
-                });
-            }
-
+            var result = _setupService.Check(doc, categoryIds);
             result.NamingMapLoaded = _codeRegistry.GetEntries().Any();
             result.SystemListLoaded = _systemRegistry.GetEntries().Any();
-            result.Notes = $"Required parameters: {result.Parameters.Count(x => x.Exists)}/{result.Parameters.Count}. Naming codes: {_codeRegistry.GetEntries().Count}. Systems: {_systemRegistry.GetEntries().Count}.";
+            result.Notes += $" Naming codes: {_codeRegistry.GetEntries().Count}. Systems: {_systemRegistry.GetEntries().Count}.";
             return result;
         }
 
         public SetupCheckResult CreateMissingParameters(Document doc, IList<ElementId> categoryIds)
         {
-            _diagnostics.AddInfo("Authoring.Setup", "Creating missing parameters via existing assign flow.");
-            _cobieSync.AssignParameters(doc, categoryIds);
-            return CheckSetup(doc, categoryIds);
+            _diagnostics.AddInfo("Authoring.Setup", "Creating missing parameters from full shared parameter set.");
+            var setup = _setupService.CreateMissing(doc, categoryIds);
+            setup.NamingMapLoaded = _codeRegistry.GetEntries().Any();
+            setup.SystemListLoaded = _systemRegistry.GetEntries().Any();
+            return setup;
         }
 
         public IList<NamingCodeMapEntry> LoadNamingCodes(string path = null)
@@ -195,5 +144,9 @@ namespace DfEIfcNamer.Services
 
         public IList<Category> GetCategories(Document doc, IList<ElementId> selected = null) => _cobieSync.GetModelCategories(doc, selected);
         public IList<SystemRegistryEntry> GetSystems() => _systemRegistry.GetEntries();
+        public IList<ZoneCatalogEntry> GetZones() => _spaceZone.GetZones();
+        public IList<AdsClassificationEntry> GetAdsClassifications() => _spaceZone.GetAdsClassifications();
+        public ClassificationSyncResult BuildClassificationSyncPreview(Document doc, IList<long> categoryIds) => _classificationSync.BuildPreview(doc, categoryIds);
+        public ApplyResult ApplyClassificationSync(Document doc, IEnumerable<ClassificationSyncPreviewRow> rows) => _classificationSync.Apply(doc, rows);
     }
 }
