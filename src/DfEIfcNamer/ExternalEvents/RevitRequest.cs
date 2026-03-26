@@ -38,6 +38,9 @@ namespace DfEIfcNamer.ExternalEvents
         TestSingleParameterBind,
         GetDiagnosticsState,
         ClearDiagnostics
+        ,
+        GenerateClassificationSyncPreview,
+        ApplyClassificationSync
     }
 
     public class RevitRequest
@@ -57,6 +60,7 @@ namespace DfEIfcNamer.ExternalEvents
         public HeaderValidationResult HeaderSnapshot { get; set; }
         public SpaceZonePreviewResult SpaceZoneSnapshot { get; set; }
         public Action<RevitResponse> Callback { get; set; }
+        public IList<ClassificationSyncPreviewRow> ClassificationSyncRows { get; set; }
     }
 
     public class RevitResponse
@@ -77,6 +81,9 @@ namespace DfEIfcNamer.ExternalEvents
         public HeaderValidationResult HeaderValidation { get; set; }
         public SpaceZonePreviewResult SpaceZonePreview { get; set; }
         public ValidationSummary ValidationSummary { get; set; }
+        public IList<ZoneCatalogEntry> Zones { get; set; }
+        public IList<AdsClassificationEntry> AdsClassifications { get; set; }
+        public ClassificationSyncResult ClassificationSyncResult { get; set; }
         public string Error { get; set; }
     }
 }
