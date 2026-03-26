@@ -15,8 +15,23 @@ namespace DfEIfcNamer.Services
 
         public SpaceZoneService()
         {
-            _zones = BuiltInZoneCatalog.Default();
-            _ads = BuiltInAdsClassificationCatalog.Default();
+            try
+            {
+                _zones = BuiltInZoneCatalog.Default();
+            }
+            catch (System.IO.FileNotFoundException)
+            {
+                _zones = new List<ZoneCatalogEntry>();
+            }
+
+            try
+            {
+                _ads = BuiltInAdsClassificationCatalog.Default();
+            }
+            catch (System.IO.FileNotFoundException)
+            {
+                _ads = new List<AdsClassificationEntry>();
+            }
         }
 
         public IList<ZoneCatalogEntry> GetZones() => _zones.ToList();

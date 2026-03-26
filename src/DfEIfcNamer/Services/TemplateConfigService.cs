@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text.Json;
 using DfEIfcNamer.Models;
 
@@ -10,19 +9,19 @@ namespace DfEIfcNamer.Services
 {
     public class TemplateConfigService
     {
-        private const string NamingResource = "DfEIfcNamer.Resources.default_naming_codes.json";
-        private const string SystemsResource = "DfEIfcNamer.Resources.DfeSystemCatalog.csv";
+        private const string NamingFileName = "default_naming_codes.json";
+        private const string SystemsFileName = "DfeSystemCatalog.csv";
+        private readonly ResourceFileLoader _resourceLoader = new ResourceFileLoader();
 
         public IList<NamingCodeMapEntry> LoadEmbeddedNamingCodes()
         {
-            var json = ReadEmbedded(NamingResource);
-            return JsonSerializer.Deserialize<List<NamingCodeMapEntry>>(json, JsonOptions()) ?? new List<NamingCodeMapEntry>();
+            return _resourceLoader.LoadJsonResourceOrFile<List<NamingCodeMapEntry>>(NamingFileName, null, JsonOptions()) ?? new List<NamingCodeMapEntry>();
         }
 
         public IList<SystemRegistryEntry> LoadEmbeddedSystems()
         {
-            var csv = ReadEmbedded(SystemsResource);
-            return ParseSystemsCsv(csv.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None));
+            var csvLines = _resourceLoader.LoadCsvResourceOrFile(SystemsFileName);
+            return ParseSystemsCsv(csvLines);
         }
 
         public IList<NamingCodeMapEntry> LoadNamingCodesFromPath(string path)
@@ -57,22 +56,6 @@ namespace DfEIfcNamer.Services
         {
             if (!File.Exists(path)) return new HeaderDataModel();
             return JsonSerializer.Deserialize<HeaderDataModel>(File.ReadAllText(path), JsonOptions()) ?? new HeaderDataModel();
-        }
-
-        private static string ReadEmbedded(string resource)
-        {
-            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource))
-            {
-                if (stream == null)
-                {
-                    throw new FileNotFoundException("Missing embedded resource: " + resource);
-                }
-
-                using (var reader = new StreamReader(stream))
-                {
-                    return reader.ReadToEnd();
-                }
-            }
         }
 
         private static JsonSerializerOptions JsonOptions() => new JsonSerializerOptions

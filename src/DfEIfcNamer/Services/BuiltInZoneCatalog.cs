@@ -1,19 +1,21 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Reflection;
 using DfEIfcNamer.Models;
 
 namespace DfEIfcNamer.Services
 {
     public static class BuiltInZoneCatalog
     {
-        private const string EmbeddedResource = "DfEIfcNamer.Resources.DfeZoneCatalog.csv";
+        private const string FileName = "DfeZoneCatalog.csv";
 
-        public static IList<ZoneCatalogEntry> Default()
+        public static IList<ZoneCatalogEntry> Default(string explicitPath = null)
         {
-            return ReadEmbeddedCsv().Skip(1)
+            var loader = new ResourceFileLoader();
+            var lines = loader.LoadCsvResourceOrFile(FileName, explicitPath);
+
+            return lines.Skip(1)
+                .Where(line => !string.IsNullOrWhiteSpace(line))
                 .Select(ParseCsvLine)
                 .Where(parts => parts.Length >= 5)
                 .Select(parts => new ZoneCatalogEntry
@@ -25,15 +27,6 @@ namespace DfEIfcNamer.Services
                     Rgb = parts[4]
                 })
                 .ToList();
-        }
-
-        private static IEnumerable<string> ReadEmbeddedCsv()
-        {
-            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(EmbeddedResource))
-            using (var reader = new StreamReader(stream ?? throw new FileNotFoundException(EmbeddedResource)))
-            {
-                while (!reader.EndOfStream) yield return reader.ReadLine();
-            }
         }
 
         private static string[] ParseCsvLine(string line) => (line ?? string.Empty).Split(',').Select(x => x.Trim(' ', '"')).ToArray();
