@@ -24,6 +24,10 @@ namespace DfEIfcNamer.Models
         public string Scope { get; set; }
         public bool Exists { get; set; }
         public bool Writable { get; set; }
+        public bool FoundInSharedParameterFile { get; set; }
+        public string SharedParameterGroup { get; set; }
+        public string ActualScope { get; set; }
+        public string Result { get; set; }
         public string Notes { get; set; }
     }
 
@@ -55,6 +59,7 @@ namespace DfEIfcNamer.Models
     public class NamingPreviewRow
     {
         public long ElementId { get; set; }
+        public long TypeElementId { get; set; }
         public string Category { get; set; }
         public string Family { get; set; }
         public string Type { get; set; }
@@ -85,6 +90,8 @@ namespace DfEIfcNamer.Models
         public int Updated { get; set; }
         public int Skipped { get; set; }
         public int Failed { get; set; }
+        public int UniqueTypesUpdated { get; set; }
+        public int InstancesUpdated { get; set; }
         public IList<string> Logs { get; set; } = new List<string>();
     }
 
@@ -118,6 +125,12 @@ namespace DfEIfcNamer.Models
         public string ProposedSpaceReference { get; set; }
         public string CurrentZoneName { get; set; }
         public string ProposedZoneName { get; set; }
+        public string CurrentZoneDescription { get; set; }
+        public string ProposedZoneDescription { get; set; }
+        public string CurrentZoneCategory { get; set; }
+        public string ProposedZoneCategory { get; set; }
+        public string CurrentAdsClassification { get; set; }
+        public string ProposedAdsClassification { get; set; }
         public string Status { get; set; }
     }
 
@@ -126,6 +139,8 @@ namespace DfEIfcNamer.Models
         public IList<SpaceZonePreviewRow> Rows { get; set; } = new List<SpaceZonePreviewRow>();
         public int SelectedCount { get; set; }
         public int MissingRoomCount { get; set; }
+        public int ValidRoomSpaceCount { get; set; }
+        public int SkippedNonRoomSpaceCount { get; set; }
     }
 
     public class ValidationSummary
@@ -162,5 +177,45 @@ namespace DfEIfcNamer.Models
     {
         public List<long> ElementIds { get; set; } = new List<long>();
         public string ProposedZoneName { get; set; }
+        public string ProposedAdsClassification { get; set; }
+    }
+
+    public class ZoneCatalogEntry
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string Category { get; set; }
+        public string Hex { get; set; }
+        public string Rgb { get; set; }
+    }
+
+    public class AdsClassificationEntry
+    {
+        public string Code { get; set; }
+        public string Description { get; set; }
+    }
+
+    public class ClassificationSyncPreviewRow
+    {
+        public long ElementId { get; set; }
+        public long TypeElementId { get; set; }
+        public string Category { get; set; }
+        public string SourceClassification { get; set; }
+        public string SourceClassification2 { get; set; }
+        public string ProposedPrNumber { get; set; }
+        public string ProposedPrDescription { get; set; }
+        public string ProposedSsNumber { get; set; }
+        public string ProposedSsDescription { get; set; }
+        public string Scope { get; set; }
+        public string Status { get; set; }
+    }
+
+    public class ClassificationSyncResult
+    {
+        public IList<ClassificationSyncPreviewRow> Rows { get; set; } = new List<ClassificationSyncPreviewRow>();
+        public int SourceRows { get; set; }
+        public int TypeTargets { get; set; }
+        public int InstanceTargets { get; set; }
+        public IList<string> Warnings { get; set; } = new List<string>();
     }
 }

@@ -29,6 +29,7 @@ namespace DfEIfcNamer.Services
             var sorted = elements.OrderBy(e => e.Id.Value).ToList();
 
             var typeCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var typeNameByTypeId = new Dictionary<long, string>();
             var instanceCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var doorRoomCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var windowRoomCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -45,16 +46,22 @@ namespace DfEIfcNamer.Services
                 };
 
                 var typeElement = doc.GetElement(element.GetTypeId()) as ElementType;
+                row.TypeElementId = typeElement?.Id?.Value ?? -1;
                 row.Family = typeElement?.FamilyName ?? string.Empty;
                 row.Type = typeElement?.Name ?? string.Empty;
                 row.CurrentIfcTypeName = Get(typeElement, "IFCName [Type]", "IFCName[Type]");
 
                 var ifcClass = NormalizeIfcClass(typeElement, row.Category);
                 var predefined = NormalizeToken(Get(element, "DfE_IFCPredefinedType", "IFC Predefined Type"), request.FallbackPredefinedType);
-                var typeKey = ifcClass + "_" + predefined;
-                if (!typeCounter.ContainsKey(typeKey)) typeCounter[typeKey] = 0;
-                typeCounter[typeKey]++;
-                row.ProposedIfcTypeName = Sanitize($"{ifcClass}_{predefined}_Type{typeCounter[typeKey].ToString().PadLeft(request.TypeNumberWidth, '0')}");
+                var typeIdentityKey = $"{row.TypeElementId}_{ifcClass}_{predefined}";
+                if (!typeNameByTypeId.TryGetValue(row.TypeElementId, out var proposedTypeName))
+                {
+                    if (!typeCounter.ContainsKey(typeIdentityKey)) typeCounter[typeIdentityKey] = 0;
+                    typeCounter[typeIdentityKey]++;
+                    proposedTypeName = Sanitize($"{ifcClass}_{predefined}_Type{typeCounter[typeIdentityKey].ToString().PadLeft(request.TypeNumberWidth, '0')}");
+                    typeNameByTypeId[row.TypeElementId] = proposedTypeName;
+                }
+                row.ProposedIfcTypeName = proposedTypeName;
 
                 row.ProposedIfcName = BuildInstanceName(doc, element, ifcClass, predefined, request, instanceCounter, doorRoomCounter, windowRoomCounter, out var status);
                 row.Status = status;
@@ -96,6 +103,7 @@ namespace DfEIfcNamer.Services
             using (var tx = new Transaction(doc, "DfE Apply Naming/System Data"))
             {
                 tx.Start();
+                var typeWriteSet = new HashSet<long>();
                 foreach (var row in rows ?? Enumerable.Empty<NamingPreviewRow>())
                 {
                     try
@@ -116,6 +124,7 @@ namespace DfEIfcNamer.Services
                         if (applyInstance)
                         {
                             Set(element, row.ProposedIfcName, "IFCName", "IfcName");
+                            result.InstancesUpdated++;
                         }
 
                         if (applySystem)
@@ -127,7 +136,19 @@ namespace DfEIfcNamer.Services
                         if (applyType)
                         {
                             var type = doc.GetElement(element.GetTypeId());
-                            Set(type, row.ProposedIfcTypeName, "IFCName [Type]", "IFCName[Type]");
+                            var typeId = type?.Id?.Value ?? -1;
+                            if (typeId <= 0)
+                            {
+                                result.Skipped++;
+                                result.Logs.Add($"Element {row.ElementId}: missing valid type.");
+                                continue;
+                            }
+
+                            if (typeWriteSet.Add(typeId))
+                            {
+                                Set(type, row.ProposedIfcTypeName, "IFCName [Type]", "IFCName[Type]");
+                                result.UniqueTypesUpdated++;
+                            }
                         }
 
                         result.Updated++;

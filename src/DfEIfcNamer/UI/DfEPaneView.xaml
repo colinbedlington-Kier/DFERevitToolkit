@@ -33,8 +33,12 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Parameter Name" Binding="{Binding ParameterName}" Width="220"/>
                             <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
+                            <DataGridCheckBoxColumn Header="In Shared File" Binding="{Binding FoundInSharedParameterFile}" Width="90"/>
+                            <DataGridTextColumn Header="Shared Group" Binding="{Binding SharedParameterGroup}" Width="120"/>
+                            <DataGridTextColumn Header="Actual Scope" Binding="{Binding ActualScope}" Width="90"/>
                             <DataGridCheckBoxColumn Header="Exists" Binding="{Binding Exists}" Width="80"/>
                             <DataGridCheckBoxColumn Header="Writable" Binding="{Binding Writable}" Width="90"/>
+                            <DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="90"/>
                             <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -140,7 +144,9 @@
                         <Button Content="Load Selection" Margin="0,0,8,8" Command="{Binding SpaceZone.LoadSelectionCommand}"/>
                         <Button Content="Resolve Rooms/Spaces" Margin="0,0,8,8" Command="{Binding SpaceZone.ResolveRoomsCommand}"/>
                         <TextBlock Text="Zone" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBox Width="180" Text="{Binding SpaceZone.ProposedZoneName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <ComboBox Width="220" DisplayMemberPath="Name" SelectedValuePath="Name" Text="{Binding SpaceZone.ProposedZoneName, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" ItemsSource="{Binding SpaceZone.Zones}" Margin="0,0,8,8"/>
+                        <TextBlock Text="ADS" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox Width="220" DisplayMemberPath="Code" SelectedValuePath="Code" Text="{Binding SpaceZone.ProposedAdsClassification, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" ItemsSource="{Binding SpaceZone.AdsClassifications}" Margin="0,0,8,8"/>
                         <Button Content="Apply SpaceReference" Margin="0,0,8,8" Command="{Binding SpaceZone.ApplySpaceReferenceCommand}"/>
                         <Button Content="Apply ZoneName" Margin="0,0,8,8" Command="{Binding SpaceZone.ApplyZoneNameCommand}"/>
                         <Button Content="Validate Assignment" Margin="0,0,8,8" Command="{Binding SpaceZone.ValidateAssignmentCommand}"/>
@@ -158,10 +164,36 @@
                             <DataGridTextColumn Header="Proposed SpaceReference" Binding="{Binding ProposedSpaceReference}" Width="140"/>
                             <DataGridTextColumn Header="Current ZoneName" Binding="{Binding CurrentZoneName}" Width="120"/>
                             <DataGridTextColumn Header="Proposed ZoneName" Binding="{Binding ProposedZoneName}" Width="120"/>
+                            <DataGridTextColumn Header="Proposed ADS" Binding="{Binding ProposedAdsClassification}" Width="100"/>
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="140"/>
                         </DataGrid.Columns>
                     </DataGrid>
                     <TextBlock Grid.Row="2" Text="{Binding SpaceZone.Status}" FontWeight="Bold"/>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Classification Sync">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="80"/></Grid.RowDefinitions>
+                    <WrapPanel>
+                        <Button Content="Preview Mapping" Margin="0,0,8,8" Command="{Binding ClassificationSync.GeneratePreviewCommand}"/>
+                        <Button Content="Apply Sync" Margin="0,0,8,8" Command="{Binding ClassificationSync.ApplyCommand}"/>
+                    </WrapPanel>
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding ClassificationSync.Rows}" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
+                            <DataGridTextColumn Header="Type Id" Binding="{Binding TypeElementId}" Width="90"/>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="100"/>
+                            <DataGridTextColumn Header="Classification" Binding="{Binding SourceClassification}" Width="140"/>
+                            <DataGridTextColumn Header="Classification(2)" Binding="{Binding SourceClassification2}" Width="140"/>
+                            <DataGridTextColumn Header="Pr Number" Binding="{Binding ProposedPrNumber}" Width="100"/>
+                            <DataGridTextColumn Header="Pr Description" Binding="{Binding ProposedPrDescription}" Width="140"/>
+                            <DataGridTextColumn Header="Ss Number" Binding="{Binding ProposedSsNumber}" Width="100"/>
+                            <DataGridTextColumn Header="Ss Description" Binding="{Binding ProposedSsDescription}" Width="140"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="120"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Grid.Row="2" Text="{Binding ClassificationSync.Status}" FontWeight="Bold"/>
                 </Grid>
             </TabItem>
 

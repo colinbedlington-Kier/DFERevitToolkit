@@ -24,6 +24,7 @@ namespace DfEIfcNamer.ViewModels
             Naming = new NamingViewModel(dispatcher);
             HeaderData = new HeaderDataViewModel(dispatcher);
             SpaceZone = new SpaceZoneViewModel(dispatcher);
+            ClassificationSync = new ClassificationSyncViewModel(dispatcher);
             Validation = new ValidationViewModel(dispatcher, Setup, Naming, HeaderData, SpaceZone);
             ExitCommand = new RelayCommand(_ => RequestClose?.Invoke());
             DocumentStatus = "Document: n/a";
@@ -34,6 +35,7 @@ namespace DfEIfcNamer.ViewModels
         public NamingViewModel Naming { get; }
         public HeaderDataViewModel HeaderData { get; }
         public SpaceZoneViewModel SpaceZone { get; }
+        public ClassificationSyncViewModel ClassificationSync { get; }
         public ValidationViewModel Validation { get; }
         public ICommand ExitCommand { get; }
 
@@ -274,7 +276,7 @@ namespace DfEIfcNamer.ViewModels
             {
                 Id = requestId,
                 NamingRows = Rows.ToList(),
-                Callback = r => { Status = $"Updated: {r.ApplyResult?.Updated ?? 0}, Skipped: {r.ApplyResult?.Skipped ?? 0}, Failed: {r.ApplyResult?.Failed ?? 0}"; }
+                Callback = r => { Status = $"Updated: {r.ApplyResult?.Updated ?? 0}, Types: {r.ApplyResult?.UniqueTypesUpdated ?? 0}, Instances: {r.ApplyResult?.InstancesUpdated ?? 0}, Skipped: {r.ApplyResult?.Skipped ?? 0}, Failed: {r.ApplyResult?.Failed ?? 0}"; }
             });
         }
 
@@ -400,6 +402,8 @@ namespace DfEIfcNamer.ViewModels
         {
             _dispatcher = dispatcher;
             Rows = new ObservableCollection<SpaceZonePreviewRow>();
+            Zones = new ObservableCollection<ZoneCatalogEntry>();
+            AdsClassifications = new ObservableCollection<AdsClassificationEntry>();
             LoadSelectionCommand = new RelayCommand(_ => Resolve());
             ResolveRoomsCommand = new RelayCommand(_ => Resolve());
             ApplySpaceReferenceCommand = new RelayCommand(_ => ApplySpace());
@@ -409,6 +413,8 @@ namespace DfEIfcNamer.ViewModels
         }
 
         public ObservableCollection<SpaceZonePreviewRow> Rows { get; }
+        public ObservableCollection<ZoneCatalogEntry> Zones { get; }
+        public ObservableCollection<AdsClassificationEntry> AdsClassifications { get; }
         public SpaceZonePreviewResult LastPreview { get; private set; }
         public ICommand LoadSelectionCommand { get; }
         public ICommand ResolveRoomsCommand { get; }
@@ -417,18 +423,23 @@ namespace DfEIfcNamer.ViewModels
         public ICommand ValidateAssignmentCommand { get; }
         public ICommand ExportReportCommand { get; }
         public string ProposedZoneName { get; set; }
+        public string ProposedAdsClassification { get; set; }
 
         private string _status = "No selection loaded.";
         public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
 
         private void Resolve()
         {
-            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ResolveSpaceZone, SpaceZoneRequest = new SpaceZoneRequest { ProposedZoneName = ProposedZoneName }, Callback = r =>
+            _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ResolveSpaceZone, SpaceZoneRequest = new SpaceZoneRequest { ProposedZoneName = ProposedZoneName, ProposedAdsClassification = ProposedAdsClassification }, Callback = r =>
             {
                 LastPreview = r.SpaceZonePreview;
                 Rows.Clear();
                 foreach (var row in r.SpaceZonePreview?.Rows ?? Enumerable.Empty<SpaceZonePreviewRow>()) Rows.Add(row);
-                Status = $"Loaded {Rows.Count} rows. Missing rooms: {r.SpaceZonePreview?.MissingRoomCount ?? 0}";
+                Zones.Clear();
+                foreach (var zone in r.Zones ?? Enumerable.Empty<ZoneCatalogEntry>()) Zones.Add(zone);
+                AdsClassifications.Clear();
+                foreach (var ads in r.AdsClassifications ?? Enumerable.Empty<AdsClassificationEntry>()) AdsClassifications.Add(ads);
+                Status = $"Loaded {Rows.Count} valid Room/Space rows, skipped non-room/space: {r.SpaceZonePreview?.SkippedNonRoomSpaceCount ?? 0}, missing refs: {r.SpaceZonePreview?.MissingRoomCount ?? 0}";
             }});
         }
 
@@ -440,6 +451,7 @@ namespace DfEIfcNamer.ViewModels
         private void ApplyZone()
         {
             foreach (var row in Rows) row.ProposedZoneName = ProposedZoneName;
+            foreach (var row in Rows) row.ProposedAdsClassification = ProposedAdsClassification;
             _dispatcher.Raise(new RevitRequest { Id = RevitRequestId.ApplyZoneName, SpaceZoneRows = Rows.ToList(), Callback = r => Status = $"ZoneName updated: {r.ApplyResult?.Updated ?? 0}, skipped: {r.ApplyResult?.Skipped ?? 0}" });
         }
 
@@ -456,6 +468,52 @@ namespace DfEIfcNamer.ViewModels
             var lines = new[] { "ElementId,RoomNumber,RoomName,ProposedSpaceReference,ProposedZoneName,Status" }
                 .Concat(Rows.Select(r => $"{r.ElementId},{r.RoomNumber},{r.RoomName},{r.ProposedSpaceReference},{r.ProposedZoneName},{r.Status}"));
             File.WriteAllLines(d.FileName, lines);
+        }
+    }
+
+    public class ClassificationSyncViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+        public ClassificationSyncViewModel(RevitRequestDispatcher dispatcher)
+        {
+            _dispatcher = dispatcher;
+            Rows = new ObservableCollection<ClassificationSyncPreviewRow>();
+            Warnings = new ObservableCollection<string>();
+            GeneratePreviewCommand = new RelayCommand(_ => Generate());
+            ApplyCommand = new RelayCommand(_ => Apply());
+        }
+
+        public ObservableCollection<ClassificationSyncPreviewRow> Rows { get; }
+        public ObservableCollection<string> Warnings { get; }
+        public ICommand GeneratePreviewCommand { get; }
+        public ICommand ApplyCommand { get; }
+        private string _status = "Not run.";
+        public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
+
+        private void Generate()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.GenerateClassificationSyncPreview,
+                Callback = r =>
+                {
+                    Rows.Clear();
+                    foreach (var row in r.ClassificationSyncResult?.Rows ?? Enumerable.Empty<ClassificationSyncPreviewRow>()) Rows.Add(row);
+                    Warnings.Clear();
+                    foreach (var w in r.ClassificationSyncResult?.Warnings ?? Enumerable.Empty<string>()) Warnings.Add(w);
+                    Status = $"Preview rows: {Rows.Count}, type targets: {r.ClassificationSyncResult?.TypeTargets ?? 0}, instance targets: {r.ClassificationSyncResult?.InstanceTargets ?? 0}";
+                }
+            });
+        }
+
+        private void Apply()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.ApplyClassificationSync,
+                ClassificationSyncRows = Rows.ToList(),
+                Callback = r => Status = $"Classification sync applied. Updated: {r.ApplyResult?.Updated ?? 0}, unique types: {r.ApplyResult?.UniqueTypesUpdated ?? 0}, instances: {r.ApplyResult?.InstancesUpdated ?? 0}"
+            });
         }
     }
 
