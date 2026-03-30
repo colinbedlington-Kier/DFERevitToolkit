@@ -16,6 +16,18 @@ namespace DfEIfcNamer.Services
         private readonly IfcDefaultsResolverService _ifcDefaults;
         private readonly ParameterWriteService _parameterWriter = new ParameterWriteService();
 
+
+        private class TypeDescriptor
+        {
+            public string Category { get; set; }
+            public string Family { get; set; }
+            public string Type { get; set; }
+            public string IfcClass { get; set; }
+            public string PredefinedDisplay { get; set; }
+            public string PredefinedSchema { get; set; }
+            public string UserDefined { get; set; }
+        }
+
         public AuthoringNamingService(NamingCodeRegistryService codeRegistry, SystemRegistryService systemRegistry, SpaceZoneService spaceZoneService, IfcDefaultsResolverService ifcDefaults)
         {
             _codeRegistry = codeRegistry;
@@ -51,7 +63,7 @@ namespace DfEIfcNamer.Services
             var doorRoomCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var windowRoomCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var systemCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            var typeDescriptors = new Dictionary<long, (string Category, string Family, string Type, string IfcClass, string PredefinedDisplay, string PredefinedSchema, string UserDefined)>();
+            var typeDescriptors = new Dictionary<long, TypeDescriptor>();
 
             foreach (var element in sorted)
             {
@@ -72,7 +84,16 @@ namespace DfEIfcNamer.Services
                 var predefinedSchema = NormalizeSchemaToken(resolvedRaw, request.FallbackPredefinedType);
                 var predefinedDisplay = ToPascalCase(predefinedSchema);
                 var userDefined = predefinedSchema == "USERDEFINED" ? (resolved.UserDefinedValue ?? string.Empty) : string.Empty;
-                typeDescriptors[typeId] = (category, family, type, ifcClass, predefinedDisplay, predefinedSchema, userDefined);
+                typeDescriptors[typeId] = new TypeDescriptor
+                {
+                    Category = category,
+                    Family = family,
+                    Type = type,
+                    IfcClass = ifcClass,
+                    PredefinedDisplay = predefinedDisplay,
+                    PredefinedSchema = predefinedSchema,
+                    UserDefined = userDefined
+                };
             }
 
             foreach (var descriptor in typeDescriptors
@@ -117,7 +138,16 @@ namespace DfEIfcNamer.Services
                 var resolved = _ifcDefaults.ResolveDefaults(row.Category, row.Family, row.Type);
                 var descriptor = typeDescriptors.TryGetValue(row.TypeElementId, out var cached)
                     ? cached
-                    : (row.Category, row.Family, row.Type, NormalizeIfcClass(typeElement, row.Category, resolved.Entity), "Notdefined", "NOTDEFINED", string.Empty);
+                    : new TypeDescriptor
+                    {
+                        Category = row.Category,
+                        Family = row.Family,
+                        Type = row.Type,
+                        IfcClass = NormalizeIfcClass(typeElement, row.Category, resolved.Entity),
+                        PredefinedDisplay = "Notdefined",
+                        PredefinedSchema = "NOTDEFINED",
+                        UserDefined = string.Empty
+                    };
                 var ifcClass = descriptor.IfcClass;
                 var predefined = descriptor.PredefinedDisplay;
                 var predefinedSchema = descriptor.PredefinedSchema;
