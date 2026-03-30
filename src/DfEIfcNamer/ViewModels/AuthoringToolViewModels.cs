@@ -23,7 +23,7 @@ namespace DfEIfcNamer.ViewModels
             _dispatcher = dispatcher;
             Setup = new SetupViewModel(dispatcher);
             Naming = new NamingViewModel(dispatcher);
-            SystemAssignment = new SystemAssignmentViewModel(Naming);
+            SystemAssignment = new SystemAssignmentViewModel(dispatcher, Naming);
             HeaderData = new HeaderDataViewModel(dispatcher);
             SpaceZone = new SpaceZoneViewModel(dispatcher);
             ClassificationSync = new ClassificationSyncViewModel(dispatcher);
@@ -54,6 +54,8 @@ namespace DfEIfcNamer.ViewModels
     public class SetupViewModel : ViewModelBase
     {
         private readonly RevitRequestDispatcher _dispatcher;
+        private readonly UiThemeService _themeService = new UiThemeService();
+        private readonly ResourceFileLoader _resourceLoader = new ResourceFileLoader();
         public SetupViewModel(RevitRequestDispatcher dispatcher)
         {
             _dispatcher = dispatcher;
@@ -69,6 +71,10 @@ namespace DfEIfcNamer.ViewModels
             ExportSetupReportCommand = new RelayCommand(_ => ExportReport());
             CopyDebugReportCommand = new RelayCommand(_ => CopyDebugReport());
             Status = "Not checked";
+            var theme = _themeService.LoadTheme();
+            DebugLines.Add("Theme config: " + (string.IsNullOrWhiteSpace(theme?.PrimaryColor) ? "unavailable" : "loaded"));
+            var logoResource = _resourceLoader.ResolveEmbeddedResourceName("Brand/kier_logo.png");
+            DebugLines.Add("Logo resource: " + (string.IsNullOrWhiteSpace(logoResource) ? "missing" : "resolved"));
             LoadCategories();
         }
 
@@ -495,36 +501,81 @@ namespace DfEIfcNamer.ViewModels
 
     public class SystemAssignmentViewModel : ViewModelBase
     {
+        private readonly RevitRequestDispatcher _dispatcher;
         private readonly NamingViewModel _naming;
+        private readonly SystemCatalogService _catalogService = new SystemCatalogService();
+        private readonly ObservableCollection<string> _existingSystemNames = new ObservableCollection<string>();
 
-        public SystemAssignmentViewModel(NamingViewModel naming)
+        public SystemAssignmentViewModel(RevitRequestDispatcher dispatcher, NamingViewModel naming)
         {
+            _dispatcher = dispatcher;
             _naming = naming;
+            SuggestedSystems = new ObservableCollection<SystemCandidateOption>();
+            AllAllowedSystems = new ObservableCollection<string>();
             AutoResolveCommand = new RelayCommand(_ => AutoResolve());
             ValidateCommand = new RelayCommand(_ => Validate());
+            SelectAllCommand = new RelayCommand(_ => SelectAll());
             ApplyCommand = _naming.ApplySystemDataCommand;
             ExportCommand = _naming.ExportReportCommand;
+            LoadAllAllowedSystems();
+            LoadExistingSystemNames();
         }
 
         public ObservableCollection<NamingPreviewRow> Rows => _naming.Rows;
         public ObservableCollection<string> Warnings => _naming.Warnings;
+        public ObservableCollection<SystemCandidateOption> SuggestedSystems { get; }
+        public ObservableCollection<string> AllAllowedSystems { get; }
         public ICommand AutoResolveCommand { get; }
         public ICommand ValidateCommand { get; }
+        public ICommand SelectAllCommand { get; }
         public ICommand ApplyCommand { get; }
         public ICommand ExportCommand { get; }
 
         public string UserDefinedName { get; set; }
         public string UserDefinedDescription { get; set; }
+        public bool AddAsNextSystem { get; set; }
+        public string SelectedSuggestedSystem { get; set; }
+        public string SelectedAllowedSystem { get; set; }
+        public string RowFilterText { get; set; }
 
         private string _status = "System assignment ready.";
         public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
 
         private void AutoResolve()
         {
-            var resolved = Rows.Count(r => !string.IsNullOrWhiteSpace(r.MatchedSystemPrefix));
-            var userDefined = Rows.Count(r => r.IsUserDefinedSystem);
-            var unresolved = Rows.Count(r => string.IsNullOrWhiteSpace(r.MatchedSystemPrefix) && !r.IsUserDefinedSystem);
-            Status = $"Auto-resolve complete. Resolved: {resolved}, user-defined: {userDefined}, unresolved/errors: {unresolved}.";
+            var selected = Rows.Where(r => r.IsSelected).ToList();
+            var relevantRows = selected.Any() ? selected : Rows.ToList();
+            var withSs = relevantRows.Where(r => !string.IsNullOrWhiteSpace(r.SourceSsNumber)).ToList();
+
+            var candidates = withSs
+                .SelectMany(r => _catalogService.ResolveCandidatesByClassification(r.SourceSsNumber)
+                    .Select(c => new SystemCandidateOption { SystemName = c.SystemName, MatchedPrefix = c.MatchedPrefix, MatchLength = c.MatchedPrefix?.Length ?? 0 }))
+                .GroupBy(c => c.SystemName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.OrderByDescending(x => x.MatchLength).First())
+                .OrderByDescending(x => x.MatchLength)
+                .ThenBy(x => x.SystemName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            SuggestedSystems.Clear();
+            foreach (var candidate in candidates) SuggestedSystems.Add(candidate);
+            if (SuggestedSystems.Any()) SelectedSuggestedSystem = SuggestedSystems.First().SystemName;
+
+            var chosen = !string.IsNullOrWhiteSpace(SelectedSuggestedSystem) ? SelectedSuggestedSystem : SelectedAllowedSystem;
+            foreach (var row in relevantRows)
+            {
+                if (!string.IsNullOrWhiteSpace(chosen))
+                {
+                    row.ProposedSystemName = AddAsNextSystem ? NextSystemName(chosen) : chosen;
+                    row.IsUserDefinedSystem = false;
+                }
+                else if (string.IsNullOrWhiteSpace(row.CandidateSystems))
+                {
+                    row.IsUserDefinedSystem = true;
+                }
+            }
+
+            var unresolved = relevantRows.Count(r => string.IsNullOrWhiteSpace(r.CandidateSystems));
+            Status = $"Rows selected: {relevantRows.Count}, rows with Ss number: {withSs.Count}, candidate systems found: {SuggestedSystems.Count}, unmatched rows: {unresolved}.";
         }
 
         private void Validate()
@@ -544,6 +595,60 @@ namespace DfEIfcNamer.ViewModels
             Status = invalid > 0
                 ? $"Validation failed for {invalid} selected USERDEFINED rows. Expected ^[A-Z][A-Za-z0-9]*_System\\d{{2}}$."
                 : "User-defined system input valid.";
+        }
+
+        private void LoadAllAllowedSystems()
+        {
+            AllAllowedSystems.Clear();
+            foreach (var item in _catalogService.GetAllAllowedSystems().Select(x => x.SystemName).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                AllAllowedSystems.Add(item);
+            }
+        }
+
+        private void LoadExistingSystemNames()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.GetExistingSystemNames,
+                Callback = r =>
+                {
+                    _existingSystemNames.Clear();
+                    foreach (var value in r.ExistingSystemNames ?? Enumerable.Empty<string>()) _existingSystemNames.Add(value);
+                }
+            });
+        }
+
+        private string NextSystemName(string selectedBase)
+        {
+            var baseName = (selectedBase ?? string.Empty).Replace("_SystemXX", string.Empty).Trim();
+            var pattern = new System.Text.RegularExpressions.Regex("^" + System.Text.RegularExpressions.Regex.Escape(baseName) + "_System(\\d{2})$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var max = 0;
+            foreach (var existing in _existingSystemNames)
+            {
+                var match = pattern.Match(existing ?? string.Empty);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var parsed))
+                {
+                    max = Math.Max(max, parsed);
+                }
+            }
+
+            return $"{baseName}_System{(max + 1):00}";
+        }
+
+        private void SelectAll()
+        {
+            var filter = RowFilterText?.Trim();
+            foreach (var row in Rows)
+            {
+                if (string.IsNullOrWhiteSpace(filter) ||
+                    (row.Category?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                    (row.SourceSsNumber?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                    (row.ProposedSystemName?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    row.IsSelected = true;
+                }
+            }
         }
     }
 

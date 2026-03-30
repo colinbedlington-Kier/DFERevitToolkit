@@ -1,0 +1,15 @@
+{
+  "systems": [
+    {
+      "systemNameTemplate": "DomesticWater",
+      "baseDescription": "Hot and cold water supply subsystems",
+      "allowedCategoryPrefixes": ["Ss_55_70"]
+    },
+    {
+      "systemNameTemplate": "Ventilation",
+      "baseDescription": "Ventilation subsystems",
+      "allowedCategoryPrefixes": ["Ss_65_40"]
+    }
+  ],
+  "userDefinedNamingRule": "^[A-Z][A-Za-z0-9]*_System\\d{2}$"
+}

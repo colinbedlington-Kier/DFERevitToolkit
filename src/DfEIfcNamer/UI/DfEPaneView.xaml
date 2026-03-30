@@ -25,9 +25,20 @@
         <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Text="DfE IFC Authoring Tool" FontSize="18" FontWeight="SemiBold" Foreground="#00263A" VerticalAlignment="Center"/>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
-                <Image Width="120" Height="36" Stretch="Uniform" Source="Resources/KierLogo.png"/>
-                <TextBlock Text="(drop approved logo at Resources/KierLogo.png if missing)" FontSize="10" Foreground="#3D4543" Margin="8,0,0,0" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="24,0,0,0">
+                <Image x:Name="KierLogoImage"
+                       Width="120"
+                       Height="36"
+                       Stretch="Uniform"
+                       Source="pack://application:,,,/DfEIfcNamer;component/Resources/Brand/kier_logo.png"
+                       Margin="0,0,8,0"
+                       ImageFailed="KierLogoImage_ImageFailed"/>
+                <TextBlock x:Name="KierLogoFallbackText"
+                           Text="Kier logo unavailable"
+                           Visibility="Collapsed"
+                           FontSize="10"
+                           Foreground="#3D4543"
+                           VerticalAlignment="Center"/>
             </StackPanel>
         </Grid>
 
@@ -126,12 +137,20 @@
                     <WrapPanel>
                         <Button Content="Auto-Resolve" Command="{Binding SystemAssignment.AutoResolveCommand}"/>
                         <Button Content="Validate" Command="{Binding SystemAssignment.ValidateCommand}"/>
+                        <Button Content="Select All" Command="{Binding SystemAssignment.SelectAllCommand}"/>
                         <Button Content="Apply" Command="{Binding SystemAssignment.ApplyCommand}"/>
                         <Button Content="Report / Export" Command="{Binding SystemAssignment.ExportCommand}"/>
+                        <CheckBox Content="Add as Next System" IsChecked="{Binding SystemAssignment.AddAsNextSystem}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Suggested systems" VerticalAlignment="Center" Margin="8,0,4,0"/>
+                        <ComboBox Width="240" ItemsSource="{Binding SystemAssignment.SuggestedSystems}" DisplayMemberPath="DisplayText" SelectedValuePath="SystemName" SelectedValue="{Binding SystemAssignment.SelectedSuggestedSystem}" Margin="0,0,8,8"/>
+                        <TextBlock Text="All allowed systems" VerticalAlignment="Center" Margin="8,0,4,0"/>
+                        <ComboBox Width="220" ItemsSource="{Binding SystemAssignment.AllAllowedSystems}" SelectedItem="{Binding SystemAssignment.SelectedAllowedSystem}" Margin="0,0,8,8"/>
                         <TextBlock Text="User-defined Name" VerticalAlignment="Center" Margin="8,0,4,0"/>
                         <TextBox Width="220" Text="{Binding SystemAssignment.UserDefinedName, UpdateSourceTrigger=PropertyChanged}"/>
                         <TextBlock Text="Description" VerticalAlignment="Center" Margin="8,0,4,0"/>
                         <TextBox Width="260" Text="{Binding SystemAssignment.UserDefinedDescription, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="Filter" VerticalAlignment="Center" Margin="8,0,4,0"/>
+                        <TextBox Width="160" Text="{Binding SystemAssignment.RowFilterText, UpdateSourceTrigger=PropertyChanged}"/>
                     </WrapPanel>
                     <DataGrid Grid.Row="1" ItemsSource="{Binding SystemAssignment.Rows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
                         <DataGrid.Columns>
@@ -140,6 +159,7 @@
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="100"/>
                             <DataGridTextColumn Header="Uniclass Ss Number" Binding="{Binding SourceSsNumber}" Width="150"/>
                             <DataGridTextColumn Header="Matched Prefix" Binding="{Binding MatchedSystemPrefix}" Width="120"/>
+                            <DataGridTextColumn Header="Candidate Systems" Binding="{Binding CandidateSystems}" Width="220"/>
                             <DataGridTextColumn Header="Resolved System" Binding="{Binding ProposedSystemName}" Width="180"/>
                             <DataGridTextColumn Header="System Description" Binding="{Binding ProposedSystemDescription}" Width="200"/>
                             <DataGridTextColumn Header="System Category" Binding="{Binding ProposedSystemCategory}" Width="220"/>

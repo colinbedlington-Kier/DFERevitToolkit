@@ -6,7 +6,7 @@ namespace DfEIfcNamer.Services
 {
     public class UiThemeService
     {
-        private const string ThemeFileName = "kier_revit_ui_theme.json";
+        private const string ThemeFileName = "Themes/kier_revit_ui_theme.json";
         private readonly ResourceFileLoader _loader = new ResourceFileLoader();
 
         public UiThemeModel LoadTheme()

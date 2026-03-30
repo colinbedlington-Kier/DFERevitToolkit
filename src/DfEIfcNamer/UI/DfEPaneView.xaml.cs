@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Windows.Controls;
 using System.Windows;
 
 namespace DfEIfcNamer.UI
@@ -10,6 +11,19 @@ namespace DfEIfcNamer.UI
         public DfEFloatingWindow()
         {
             InitializeComponent();
+        }
+
+        private void KierLogoImage_ImageFailed(object sender, ExceptionRoutedEventArgs e)
+        {
+            if (KierLogoImage != null)
+            {
+                KierLogoImage.Visibility = Visibility.Collapsed;
+            }
+
+            if (KierLogoFallbackText != null)
+            {
+                KierLogoFallbackText.Visibility = Visibility.Visible;
+            }
         }
 
         protected override void OnClosing(CancelEventArgs e)

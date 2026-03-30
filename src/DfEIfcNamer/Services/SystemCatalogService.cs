@@ -8,7 +8,7 @@ namespace DfEIfcNamer.Services
 {
     public class SystemCatalogService
     {
-        private const string CatalogFileName = "dfe_system_catalog.json";
+        private const string CatalogFileName = "Data/dfe_system_catalog.json";
         private readonly ResourceFileLoader _loader = new ResourceFileLoader();
         private readonly object _sync = new object();
         private List<SystemRegistryEntry> _cachedEntries;
@@ -39,8 +39,12 @@ namespace DfEIfcNamer.Services
 
         public SystemRegistryEntry ResolveByClassification(string ssNumber)
         {
-            if (string.IsNullOrWhiteSpace(ssNumber)) return null;
+            return ResolveCandidatesByClassification(ssNumber).FirstOrDefault();
+        }
 
+        public IList<SystemRegistryEntry> ResolveCandidatesByClassification(string ssNumber)
+        {
+            if (string.IsNullOrWhiteSpace(ssNumber)) return new List<SystemRegistryEntry>();
             var entries = LoadEntries();
             return entries
                 .SelectMany(entry => (entry.AllowedCategoryPrefixes ?? new List<string>())
@@ -57,7 +61,13 @@ namespace DfEIfcNamer.Services
                     Discipline = x.Entry.Discipline,
                     MatchedPrefix = x.Prefix
                 })
-                .FirstOrDefault();
+                .OrderBy(x => x.SystemName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        public IList<SystemRegistryEntry> GetAllAllowedSystems()
+        {
+            return LoadEntries().OrderBy(x => x.SystemName, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         private static List<SystemRegistryEntry> ParseEntries(string json)
@@ -121,13 +131,27 @@ namespace DfEIfcNamer.Services
                 {
                     return value.EnumerateArray()
                         .Where(x => x.ValueKind == JsonValueKind.String)
-                        .Select(x => x.GetString())
+                        .SelectMany(x => SplitPrefixes(x.GetString()))
                         .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
                         .ToList();
+                }
+
+                if (value.ValueKind == JsonValueKind.String)
+                {
+                    return SplitPrefixes(value.GetString()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 }
             }
 
             return new List<string>();
+        }
+
+        private static IEnumerable<string> SplitPrefixes(string raw)
+        {
+            return (raw ?? string.Empty)
+                .Split(new[] { '/', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x));
         }
     }
 }

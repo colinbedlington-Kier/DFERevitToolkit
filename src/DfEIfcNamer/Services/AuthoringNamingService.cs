@@ -174,10 +174,12 @@ namespace DfEIfcNamer.Services
                 }
 
                 var selectedSystem = _systemRegistry.Find(request.SelectedSystemName);
-                var resolvedSystem = selectedSystem ?? _systemCatalog.ResolveByClassification(row.SourceSsNumber);
+                var candidates = _systemCatalog.ResolveCandidatesByClassification(row.SourceSsNumber);
+                var resolvedSystem = selectedSystem ?? candidates.FirstOrDefault();
                 var systemBase = resolvedSystem?.SystemName ?? request.SelectedSystemName ?? "USERDEFINED";
                 row.MatchedSystemPrefix = resolvedSystem?.MatchedPrefix ?? string.Empty;
                 row.IsUserDefinedSystem = string.Equals(systemBase, "USERDEFINED", StringComparison.OrdinalIgnoreCase);
+                row.CandidateSystems = string.Join(" | ", candidates.Select(c => c.SystemName));
                 row.ProposedSystemName = BuildSystemName(systemBase, row.Category, request, systemCounter);
                 row.ProposedSystemDescription = resolvedSystem?.SystemDescription ?? (row.IsUserDefinedSystem ? "User defined system." : (string.IsNullOrWhiteSpace(systemBase) ? string.Empty : $"Generated for {systemBase}"));
                 row.ProposedSystemCategory = string.IsNullOrWhiteSpace(row.SourceSsNumber) ? string.Empty : $"{row.SourceSsNumber} : {row.SourceSsDescription}".Trim().TrimEnd(':').Trim();
@@ -211,6 +213,11 @@ namespace DfEIfcNamer.Services
             var distinctTypeRows = result.Rows.Where(r => r.TypeElementId > 0).GroupBy(r => r.TypeElementId).ToList();
             var reusedTypeNameCount = distinctTypeRows.Count(g => g.Select(x => x.ProposedIfcTypeName).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1 && g.Count() > 1);
             result.Warnings.Add($"Type numbering diagnostics: distinct types={distinctTypeRows.Count}, unique IFCName[Type] values={distinctTypeRows.Select(g => g.First().ProposedIfcTypeName).Distinct(StringComparer.OrdinalIgnoreCase).Count()}, repeated instances reusing same type name={reusedTypeNameCount}.");
+            var catalogError = _systemCatalog.GetLastError();
+            if (!string.IsNullOrWhiteSpace(catalogError))
+            {
+                result.Warnings.Add("System catalog load warning: " + catalogError);
+            }
 
             return result;
         }

@@ -98,6 +98,7 @@ namespace DfEIfcNamer.Models
         public string MatchedSystemPrefix { get; set; }
         public bool IsUserDefinedSystem { get; set; }
         public string UserDefinedValidationError { get; set; }
+        public string CandidateSystems { get; set; }
         public string ProposedIfcExportAs { get; set; }
         public string ProposedIfcEntity { get; set; }
         public string ProposedIfcPredefinedType { get; set; }
@@ -288,5 +289,13 @@ namespace DfEIfcNamer.Models
         public int TypeTargets { get; set; }
         public int InstanceTargets { get; set; }
         public IList<string> Warnings { get; set; } = new List<string>();
+    }
+
+    public class SystemCandidateOption
+    {
+        public string SystemName { get; set; }
+        public string MatchedPrefix { get; set; }
+        public int MatchLength { get; set; }
+        public string DisplayText => string.IsNullOrWhiteSpace(MatchedPrefix) ? SystemName : $"{SystemName} ({MatchedPrefix})";
     }
 }

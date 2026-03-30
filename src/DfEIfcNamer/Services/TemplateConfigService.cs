@@ -10,7 +10,7 @@ namespace DfEIfcNamer.Services
     public class TemplateConfigService
     {
         private const string NamingFileName = "default_naming_codes.json";
-        private const string SystemsFileName = "dfe_system_catalog.json";
+        private const string SystemsFileName = "Data/dfe_system_catalog.json";
         private readonly ResourceFileLoader _resourceLoader = new ResourceFileLoader();
         public string LastNamingCodesSource { get; private set; } = "embedded";
         public string LastSystemsSource { get; private set; } = "embedded";
@@ -150,7 +150,7 @@ namespace DfEIfcNamer.Services
         private static List<string> SplitList(string text) =>
             string.IsNullOrWhiteSpace(text)
                 ? new List<string>()
-                : text.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList();
+                : text.Split(new[] { '|', '/', ',', ';' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList();
 
         private static string Read(JsonElement row, params string[] names)
         {

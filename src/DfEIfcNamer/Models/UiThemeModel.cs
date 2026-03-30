@@ -4,7 +4,7 @@ namespace DfEIfcNamer.Models
     {
         public string PrimaryFont { get; set; } = "Poppins";
         public string FallbackFont { get; set; } = "Arial";
-        public string LogoPath { get; set; } = "Resources/KierLogo.png";
+        public string LogoPath { get; set; } = "pack://application:,,,/DfEIfcNamer;component/Resources/Brand/kier_logo.png";
         public string PrimaryColor { get; set; } = "#00263A";
         public string AccentColor { get; set; } = "#007B86";
         public string ErrorColor { get; set; } = "#DA242A";
