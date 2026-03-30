@@ -15,10 +15,10 @@
   {"name":"SystemName","scope":"Instance","usage":"System","categories":["*"],"requiredForSetupCheck":true},
   {"name":"SystemDescription","scope":"Instance","usage":"System","categories":["*"],"requiredForSetupCheck":true},
   {"name":"SystemCategory","scope":"Instance","usage":"System","categories":["*"],"requiredForSetupCheck":true},
-  {"name":"ZoneName","scope":"Instance","usage":"SpaceZone","categories":["Rooms","Spaces"],"requiredForSetupCheck":true},
-  {"name":"ZoneDescription","scope":"Instance","usage":"SpaceZone","categories":["Rooms","Spaces"],"requiredForSetupCheck":true},
-  {"name":"ZoneCategory","scope":"Instance","usage":"SpaceZone","categories":["Rooms","Spaces"],"requiredForSetupCheck":true},
-  {"name":"DfE ADS Classification","scope":"Instance","usage":"SpaceZone","categories":["Rooms","Spaces"],"requiredForSetupCheck":true},
+  {"name":"ZoneName","scope":"Instance","usage":"SpaceZone","categories":["Rooms"],"requiredForSetupCheck":true},
+  {"name":"ZoneDescription","scope":"Instance","usage":"SpaceZone","categories":["Rooms"],"requiredForSetupCheck":true},
+  {"name":"ZoneCategory","scope":"Instance","usage":"SpaceZone","categories":["Rooms"],"requiredForSetupCheck":true},
+  {"name":"DfE ADS Classification","scope":"Instance","usage":"SpaceZone","categories":["Rooms"],"requiredForSetupCheck":true},
   {"name":"Classification","scope":"Instance","usage":"Classification","categories":["*"],"requiredForSetupCheck":true},
   {"name":"Classification(2)","scope":"Instance","usage":"Classification","categories":["*"],"requiredForSetupCheck":true},
   {"name":"Classification(3)","scope":"Instance","usage":"Classification","categories":["*"],"requiredForSetupCheck":false},
@@ -34,4 +34,9 @@
   {"name":"IfcBuildingDescription","scope":"Project","usage":"Header","aliases":["Building Description"],"categories":["Project Information"],"requiredForSetupCheck":true},
   {"name":"UPRN","scope":"Project","usage":"Header","categories":["Project Information"],"requiredForSetupCheck":true},
   {"name":"MaximumBlockHeight","scope":"Project","usage":"Header","categories":["Project Information"],"requiredForSetupCheck":true}
+ ,
+  {"name":"NumberOfStoreys","scope":"Project","usage":"Header","categories":["Project Information"],"requiredForSetupCheck":false},
+  {"name":"Phase","scope":"Project","usage":"Header","categories":["Project Information"],"requiredForSetupCheck":false},
+  {"name":"BlockConstructionType","scope":"Project","usage":"Header","categories":["Project Information"],"requiredForSetupCheck":false}
+
 ]

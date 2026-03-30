@@ -14,7 +14,7 @@ namespace DfEIfcNamer.Services
         private static readonly string[] AdsClassificationParameterAliases = { "DfE ADS Classification" };
         private readonly IList<ZoneCatalogEntry> _zones;
         private readonly IList<AdsClassificationEntry> _ads;
-        private readonly InstanceParameterWriter _instanceWriter = new InstanceParameterWriter();
+        private readonly ParameterWriteService _parameterWriter = new ParameterWriteService();
 
         public SpaceZoneService()
         {
@@ -94,21 +94,24 @@ namespace DfEIfcNamer.Services
                 foreach (var row in rows ?? Enumerable.Empty<SpaceZonePreviewRow>())
                 {
                     var element = doc.GetElement(new ElementId(row.ElementId));
-                    var p = element?.LookupParameter("SpaceReference");
-                    if (p == null || p.IsReadOnly)
+                    if (!ParameterWriteService.IsRoom(element))
                     {
                         result.Skipped++;
+                        result.Logs.Add($"Scope=Room; Target={row.ElementId}; Parameter=SpaceReference; Status=Skipped; Reason=Skipped non-room element for room-only parameter");
                         continue;
                     }
 
                     if (string.IsNullOrWhiteSpace(row.ProposedSpaceReference))
                     {
                         result.Skipped++;
+                        result.Logs.Add($"Scope=Room; Target={row.ElementId}; Parameter=SpaceReference; Status=Skipped; Reason=null value");
                         continue;
                     }
 
-                    p.Set(row.ProposedSpaceReference);
-                    result.Updated++;
+                    if (_parameterWriter.SetRoomParameter(element, "SpaceReference", row.ProposedSpaceReference, result))
+                    {
+                        result.Updated++;
+                    }
                 }
 
                 tx.Commit();
@@ -126,27 +129,31 @@ namespace DfEIfcNamer.Services
                 foreach (var row in rows ?? Enumerable.Empty<SpaceZonePreviewRow>())
                 {
                     var element = doc.GetElement(new ElementId(row.ElementId));
-                    var p = element?.LookupParameter("ZoneName");
-                    if (p == null || p.IsReadOnly)
+                    if (!ParameterWriteService.IsRoom(element))
                     {
                         result.Skipped++;
+                        result.Logs.Add($"Scope=Room; Target={row.ElementId}; Parameter=ZoneName; Status=Skipped; Reason=Skipped non-room element for room-only parameter");
                         continue;
                     }
 
-                    p.Set(row.ProposedZoneName ?? string.Empty);
-                    _instanceWriter.Write(element, row.ProposedZoneDescription, "ZoneDescription");
-                    _instanceWriter.Write(element, row.ProposedZoneCategory, "ZoneCategory");
+                    var zoneUpdated = _parameterWriter.SetRoomParameter(element, "ZoneName", row.ProposedZoneName ?? string.Empty, result);
+                    _parameterWriter.SetRoomParameter(element, "ZoneDescription", row.ProposedZoneDescription ?? string.Empty, result);
+                    _parameterWriter.SetRoomParameter(element, "ZoneCategory", row.ProposedZoneCategory ?? string.Empty, result);
                     var resolvedAds = ResolveAds(row.ProposedAdsClassification);
                     var classificationValue = FormatAdsClassification(resolvedAds.Code, resolvedAds.Description);
-                    var wroteClassification = _instanceWriter.Write(element, classificationValue, AdsClassificationParameterAliases);
-                    var wroteText = !string.IsNullOrWhiteSpace(resolvedAds.Code) && _instanceWriter.Write(element, resolvedAds.Code, AdsTextParameterAliases);
+                    var wroteClassification = _parameterWriter.SetRoomParameter(element, AdsClassificationParameterAliases[0], classificationValue, result);
+                    var wroteText = !string.IsNullOrWhiteSpace(resolvedAds.Code) && _parameterWriter.SetRoomParameter(element, AdsTextParameterAliases[0], resolvedAds.Code, result);
                     if (wroteClassification) result.AdsClassificationUpdated++;
                     if (wroteText) result.AdsTextUpdated++;
                     if (!wroteClassification || !wroteText)
                     {
-                        result.Logs.Add($"Element {row.ElementId}: ADS write incomplete (classification={wroteClassification}, text={wroteText}).");
+                        result.Logs.Add($"Scope=Room; Target={row.ElementId}; Parameter=DfE ADS Classification; Status=Failed; Reason=ADS write incomplete (classification={wroteClassification}, text={wroteText})");
                     }
-                    result.Updated++;
+
+                    if (zoneUpdated)
+                    {
+                        result.Updated++;
+                    }
                 }
 
                 tx.Commit();
@@ -178,7 +185,7 @@ namespace DfEIfcNamer.Services
             Func<Element, bool> valid = e =>
             {
                 var bic = (BuiltInCategory)e.Category.Id.Value;
-                return bic == BuiltInCategory.OST_Rooms || bic == BuiltInCategory.OST_MEPSpaces;
+                return bic == BuiltInCategory.OST_Rooms;
             };
             if (ids != null && ids.Any())
             {
