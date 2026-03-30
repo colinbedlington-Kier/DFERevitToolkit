@@ -83,7 +83,10 @@ namespace DfEIfcNamer.Services
 
         private string BuildCanonicalEmbeddedName(string fileName)
         {
-            return _defaultNamespace + ".Resources." + (fileName ?? string.Empty);
+            var normalized = (fileName ?? string.Empty)
+                .Replace("\\", ".")
+                .Replace("/", ".");
+            return _defaultNamespace + ".Resources." + normalized;
         }
 
         private string ResolveExistingPath(string fileName, string explicitPath)

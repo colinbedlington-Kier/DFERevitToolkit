@@ -106,6 +106,9 @@ namespace DfEIfcNamer.ExternalEvents
                     case RevitRequestId.ApplyClassificationSync:
                         response.ApplyResult = _authoringService.ApplyClassificationSync(doc, _request.ClassificationSyncRows);
                         break;
+                    case RevitRequestId.GetExistingSystemNames:
+                        response.ExistingSystemNames = _authoringService.GetExistingSystemNames(doc);
+                        break;
                     case RevitRequestId.SyncCobieFromIfc:
                         response.SyncResult = _authoringService.SyncCobie(doc);
                         break;

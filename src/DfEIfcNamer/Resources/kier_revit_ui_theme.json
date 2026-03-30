@@ -1,0 +1,9 @@
+{
+  "primaryFont": "Poppins",
+  "fallbackFont": "Arial",
+  "primaryColor": "#00263A",
+  "accentColor": "#007B86",
+  "errorColor": "#DA242A",
+  "neutralColor": "#3D4543",
+  "logoPath": "pack://application:,,,/DfEIfcNamer;component/Resources/Brand/kier_logo.png"
+}

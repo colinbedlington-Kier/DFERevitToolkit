@@ -21,8 +21,16 @@ namespace DfEIfcNamer.Services
             "COBie.Type.Name",
             "IFCName [Type]",
             "IFCName[Type]",
+            "IfcName [Type]",
+            "IfcName[Type]",
+            "IfcDescription [Type]",
+            "IfcDescription[Type]",
             "Export to IFC As",
-            "IFC Predefined Type"
+            "IFC Predefined Type",
+            "Classification(6)",
+            "Classification(7)",
+            "Classification(8)",
+            "Classification(9)"
         };
 
         private static readonly HashSet<string> RoomParameters = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -54,16 +62,19 @@ namespace DfEIfcNamer.Services
 
     public class ParameterWriteService
     {
+        private readonly ParameterAliasResolver _aliasResolver = new ParameterAliasResolver();
+
         public bool SetInstanceParameter(Element element, string name, string value, ApplyResult result = null)
         {
             if (element == null) return LogFailure(result, "Instance", "n/a", name, "missing element");
-            var parameter = element.LookupParameter(name);
+            var match = _aliasResolver.Resolve(element, name);
+            var parameter = match.Parameter;
             if (parameter == null) return LogFailure(result, "Instance", element.Id.Value.ToString(), name, "missing parameter");
             if (parameter.IsReadOnly) return LogFailure(result, "Instance", element.Id.Value.ToString(), name, "read-only parameter");
             if (value == null) return LogSkipped(result, "Instance", element.Id.Value.ToString(), name, "null value");
 
             parameter.Set(value);
-            LogSuccess(result, "Instance", element.Id.Value.ToString(), name);
+            LogSuccess(result, "Instance", element.Id.Value.ToString(), name, match.MatchedName, match.AliasMatched);
             return true;
         }
 
@@ -75,13 +86,14 @@ namespace DfEIfcNamer.Services
 
             var type = doc.GetElement(typeId);
             if (type == null) return LogFailure(result, "Type", element.Id.Value.ToString(), name, "missing type element");
-            var parameter = type.LookupParameter(name);
+            var match = _aliasResolver.Resolve(type, name);
+            var parameter = match.Parameter;
             if (parameter == null) return LogFailure(result, "Type", type.Id.Value.ToString(), name, "missing parameter");
             if (parameter.IsReadOnly) return LogFailure(result, "Type", type.Id.Value.ToString(), name, "read-only parameter");
             if (value == null) return LogSkipped(result, "Type", type.Id.Value.ToString(), name, "null value");
 
             parameter.Set(value);
-            LogSuccess(result, "Type", type.Id.Value.ToString(), name);
+            LogSuccess(result, "Type", type.Id.Value.ToString(), name, match.MatchedName, match.AliasMatched);
             return true;
         }
 
@@ -94,7 +106,8 @@ namespace DfEIfcNamer.Services
             if (value == null) return LogSkipped(result, "Project", "Project", name, "null value");
 
             parameter.Set(value);
-            LogSuccess(result, "Project", "Project", name);
+            var matchedName = parameter.Definition?.Name ?? name;
+            LogSuccess(result, "Project", "Project", name, matchedName, !string.Equals(name, matchedName, StringComparison.Ordinal));
             return true;
         }
 
@@ -109,7 +122,8 @@ namespace DfEIfcNamer.Services
             if (value == null) return LogSkipped(result, "Room", element.Id.Value.ToString(), name, "null value");
 
             parameter.Set(value);
-            LogSuccess(result, "Room", element.Id.Value.ToString(), name);
+            var matchedName = parameter.Definition?.Name ?? name;
+            LogSuccess(result, "Room", element.Id.Value.ToString(), name, matchedName, !string.Equals(name, matchedName, StringComparison.Ordinal));
             return true;
         }
 
@@ -134,9 +148,13 @@ namespace DfEIfcNamer.Services
             return false;
         }
 
-        private static void LogSuccess(ApplyResult result, string scope, string target, string parameter)
+        private static void LogSuccess(ApplyResult result, string scope, string target, string parameter, string matchedParameter, bool aliasMatched)
         {
-            result?.ReportRows.Add(new ParameterWriteReportRow { Scope = scope, Target = target, Parameter = parameter, Status = "Success", Reason = string.Empty });
+            var detail = string.IsNullOrWhiteSpace(matchedParameter)
+                ? string.Empty
+                : (aliasMatched ? $"alias matched: {matchedParameter}" : $"matched: {matchedParameter}");
+            result?.Logs.Add($"Scope={scope}; Target={target}; Parameter={parameter}; Status=Success; {detail}");
+            result?.ReportRows.Add(new ParameterWriteReportRow { Scope = scope, Target = target, Parameter = parameter, Status = "Success", Reason = detail });
         }
     }
 }

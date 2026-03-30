@@ -9,6 +9,7 @@ namespace DfEIfcNamer.Services
     public class ClassificationSyncService
     {
         private readonly InstanceParameterWriter _instanceWriter = new InstanceParameterWriter();
+        private readonly ParameterWriteService _parameterWriteService = new ParameterWriteService();
 
         public ClassificationSyncResult BuildPreview(Document doc, IList<long> categoryIds)
         {
@@ -18,6 +19,7 @@ namespace DfEIfcNamer.Services
                 .WhereElementIsNotElementType()
                 .Where(e => e.Category != null && (selected.Count == 0 || selected.Contains(e.Category.Id.Value)))
                 .ToList();
+            result.SelectedCount = elements.Count;
 
             foreach (var element in elements)
             {
@@ -33,7 +35,11 @@ namespace DfEIfcNamer.Services
                 if (string.IsNullOrWhiteSpace(prNumber) &&
                     string.IsNullOrWhiteSpace(ssNumber) &&
                     string.IsNullOrWhiteSpace(enName) &&
-                    string.IsNullOrWhiteSpace(efName)) continue;
+                    string.IsNullOrWhiteSpace(efName))
+                {
+                    result.MissingClassificationCount++;
+                    continue;
+                }
 
                 var proposedC2 = !string.IsNullOrWhiteSpace(enName)
                     ? $"[Uniclass En Entities] {enName}".Trim()
@@ -53,11 +59,14 @@ namespace DfEIfcNamer.Services
                     SourceSsDescription = ssDescription,
                     SourceClassificationEnName = enName,
                     SourceClassificationEfName = efName,
+                    SourceClassification = Get(type, "Classification"),
+                    SourceClassification2 = Get(type, "Classification(2)"),
                     ProposedClassification2 = proposedC2,
                     ProposedClassification3 = proposedC3,
                     Scope = "Type->Instance",
                     Status = "Ready"
                 });
+                result.ClassifiedCount++;
             }
 
             if (!elements.Any(e => doc.GetElement(e.GetTypeId())?.LookupParameter("Uniclass.Classification.En.Name") != null))
@@ -68,6 +77,10 @@ namespace DfEIfcNamer.Services
             result.SourceRows = result.Rows.Count;
             result.TypeTargets = result.Rows.Select(x => x.TypeElementId).Distinct().Count();
             result.InstanceTargets = result.Rows.Select(x => x.ElementId).Distinct().Count();
+            if (result.ClassifiedCount == 0)
+            {
+                result.Warnings.Add("No Classification.Uniclass values were found on the selected elements/types. Please complete the classification data using Autodesk Classification Manager before running Classification Sync.");
+            }
             return result;
         }
 
@@ -77,6 +90,7 @@ namespace DfEIfcNamer.Services
             using (var tx = new Transaction(doc, "DfE Classification Sync"))
             {
                 tx.Start();
+                var writtenTypes = new HashSet<long>();
                 foreach (var row in rows ?? Enumerable.Empty<ClassificationSyncPreviewRow>())
                 {
                     var element = doc.GetElement(new ElementId(row.ElementId));
@@ -84,10 +98,22 @@ namespace DfEIfcNamer.Services
 
                     var wrote2 = _instanceWriter.Write(element, row.ProposedClassification2, "Classification(2)");
                     var wrote3 = _instanceWriter.Write(element, row.ProposedClassification3, "Classification(3)");
+                    var wrote1 = _instanceWriter.Write(element, row.SourceClassification, "Classification");
+                    var wrote4 = _instanceWriter.Write(element, row.SourcePrNumber, "Classification(4)");
+                    var wrote5 = _instanceWriter.Write(element, row.SourceSsNumber, "Classification(5)");
                     if (!wrote2 && !wrote3) { result.Skipped++; continue; }
 
+                    if (writtenTypes.Add(row.TypeElementId))
+                    {
+                        _parameterWriteService.SetTypeParameter(doc, element, "Classification(6)", row.SourcePrNumber, result);
+                        _parameterWriteService.SetTypeParameter(doc, element, "Classification(7)", row.SourcePrDescription, result);
+                        _parameterWriteService.SetTypeParameter(doc, element, "Classification(8)", row.SourceSsNumber, result);
+                        _parameterWriteService.SetTypeParameter(doc, element, "Classification(9)", row.SourceSsDescription, result);
+                    }
+
                     result.InstancesUpdated++;
-                    result.Updated++;
+                    if (wrote1) result.Updated++;
+                    if (wrote4 || wrote5 || wrote2 || wrote3) result.Updated++;
                 }
                 tx.Commit();
             }

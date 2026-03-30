@@ -10,10 +10,13 @@ namespace DfEIfcNamer.Services
     public class AuthoringNamingService
     {
         private static readonly Regex InvalidIfcNameCharacters = new Regex(@"[^A-Za-z0-9_-]", RegexOptions.Compiled);
+        private static readonly Regex InvalidIfcNameCharactersAllowDots = new Regex(@"[^A-Za-z0-9_.-]", RegexOptions.Compiled);
+        private static readonly Regex UserDefinedSystemNameRegex = new Regex("^[A-Z][A-Za-z0-9]*_System\\d{2}$", RegexOptions.Compiled);
         private readonly NamingCodeRegistryService _codeRegistry;
         private readonly SystemRegistryService _systemRegistry;
         private readonly SpaceZoneService _spaceZoneService;
         private readonly IfcDefaultsResolverService _ifcDefaults;
+        private readonly SystemCatalogService _systemCatalog = new SystemCatalogService();
         private readonly ParameterWriteService _parameterWriter = new ParameterWriteService();
 
 
@@ -162,12 +165,26 @@ namespace DfEIfcNamer.Services
                 row.Status = status;
                 row.Eligible = status == "OK" || status.StartsWith("WARN");
 
-                var selectedSystem = _systemRegistry.Find(request.SelectedSystemName);
-                var systemBase = selectedSystem?.SystemName ?? request.SelectedSystemName ?? string.Empty;
-                row.ProposedSystemName = BuildSystemName(systemBase, row.Category, request, systemCounter);
-                row.ProposedSystemDescription = selectedSystem?.SystemDescription ?? (string.IsNullOrWhiteSpace(systemBase) ? string.Empty : $"Generated for {systemBase}");
+                row.SourceSsNumber = Get(typeElement, "Classification.Uniclass.Ss.Number");
+                row.SourceSsDescription = Get(typeElement, "Classification.Uniclass.Ss.Description");
+                if (string.IsNullOrWhiteSpace(row.SourceSsNumber))
+                {
+                    row.SourceSsNumber = Get(element, "Classification.Uniclass.Ss.Number");
+                    row.SourceSsDescription = Get(element, "Classification.Uniclass.Ss.Description");
+                }
 
-                if (selectedSystem != null && !_systemRegistry.IsCompatible(selectedSystem, row.Category, ifcClass))
+                var selectedSystem = _systemRegistry.Find(request.SelectedSystemName);
+                var candidates = _systemCatalog.ResolveCandidatesByClassification(row.SourceSsNumber);
+                var resolvedSystem = selectedSystem ?? candidates.FirstOrDefault();
+                var systemBase = resolvedSystem?.SystemName ?? request.SelectedSystemName ?? "USERDEFINED";
+                row.MatchedSystemPrefix = resolvedSystem?.MatchedPrefix ?? string.Empty;
+                row.IsUserDefinedSystem = string.Equals(systemBase, "USERDEFINED", StringComparison.OrdinalIgnoreCase);
+                row.CandidateSystems = string.Join(" | ", candidates.Select(c => c.SystemName));
+                row.ProposedSystemName = BuildSystemName(systemBase, row.Category, request, systemCounter);
+                row.ProposedSystemDescription = resolvedSystem?.SystemDescription ?? (row.IsUserDefinedSystem ? "User defined system." : (string.IsNullOrWhiteSpace(systemBase) ? string.Empty : $"Generated for {systemBase}"));
+                row.ProposedSystemCategory = string.IsNullOrWhiteSpace(row.SourceSsNumber) ? string.Empty : $"{row.SourceSsNumber} : {row.SourceSsDescription}".Trim().TrimEnd(':').Trim();
+
+                if (resolvedSystem != null && !_systemRegistry.IsCompatible(resolvedSystem, row.Category, ifcClass))
                 {
                     row.Status = AppendStatus(row.Status, "WARN: system may be incompatible");
                 }
@@ -196,6 +213,11 @@ namespace DfEIfcNamer.Services
             var distinctTypeRows = result.Rows.Where(r => r.TypeElementId > 0).GroupBy(r => r.TypeElementId).ToList();
             var reusedTypeNameCount = distinctTypeRows.Count(g => g.Select(x => x.ProposedIfcTypeName).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1 && g.Count() > 1);
             result.Warnings.Add($"Type numbering diagnostics: distinct types={distinctTypeRows.Count}, unique IFCName[Type] values={distinctTypeRows.Select(g => g.First().ProposedIfcTypeName).Distinct(StringComparer.OrdinalIgnoreCase).Count()}, repeated instances reusing same type name={reusedTypeNameCount}.");
+            var catalogError = _systemCatalog.GetLastError();
+            if (!string.IsNullOrWhiteSpace(catalogError))
+            {
+                result.Warnings.Add("System catalog load warning: " + catalogError);
+            }
 
             return result;
         }
@@ -237,9 +259,17 @@ namespace DfEIfcNamer.Services
 
                         if (applySystem)
                         {
-                            _parameterWriter.SetInstanceParameter(element, "SystemName", row.ProposedSystemName, result);
-                            _parameterWriter.SetInstanceParameter(element, "SystemDescription", row.ProposedSystemDescription, result);
-                            _parameterWriter.SetInstanceParameter(element, "SystemCategory", row.Category, result);
+                            if (row.IsUserDefinedSystem && !string.IsNullOrWhiteSpace(row.UserDefinedValidationError))
+                            {
+                                result.Skipped++;
+                                result.Logs.Add($"Scope=Instance; Target={row.ElementId}; Parameter=SystemName; Status=Skipped; Reason={row.UserDefinedValidationError}");
+                            }
+                            else
+                            {
+                                _parameterWriter.SetInstanceParameter(element, "SystemName", row.ProposedSystemName, result);
+                                _parameterWriter.SetInstanceParameter(element, "SystemDescription", row.ProposedSystemDescription, result);
+                                _parameterWriter.SetInstanceParameter(element, "SystemCategory", string.IsNullOrWhiteSpace(row.ProposedSystemCategory) ? row.Category : row.ProposedSystemCategory, result);
+                            }
                         }
 
                         if (applyType)
@@ -364,7 +394,7 @@ namespace DfEIfcNamer.Services
 
             if (!counter.ContainsKey(roomNumber)) counter[roomNumber] = 0;
             counter[roomNumber]++;
-            return Sanitize($"{roomNumber}-{prefix}{counter[roomNumber].ToString("D2")}");
+            return SanitizeKeepingDots($"{roomNumber?.Trim()}-{prefix}{counter[roomNumber].ToString("D2")}");
         }
 
         private static IList<Element> ResolveScope(Document doc, NamingGenerationRequest request)
@@ -461,6 +491,7 @@ namespace DfEIfcNamer.Services
         }
 
         private static string Sanitize(string value) => InvalidIfcNameCharacters.Replace(value ?? string.Empty, string.Empty);
+        private static string SanitizeKeepingDots(string value) => InvalidIfcNameCharactersAllowDots.Replace(value ?? string.Empty, string.Empty);
 
         private static string AppendStatus(string current, string add)
         {
@@ -479,6 +510,13 @@ namespace DfEIfcNamer.Services
             if (!systemCounter.ContainsKey(key)) systemCounter[key] = 0;
             systemCounter[key]++;
             return $"{normalizedBase}_System{systemCounter[key]:00}";
+        }
+
+        public static string ValidateUserDefinedSystemName(string userDefinedSystemName)
+        {
+            return UserDefinedSystemNameRegex.IsMatch(userDefinedSystemName ?? string.Empty)
+                ? string.Empty
+                : "Invalid user-defined name. Expected PascalCaseName_SystemXX.";
         }
     }
 }

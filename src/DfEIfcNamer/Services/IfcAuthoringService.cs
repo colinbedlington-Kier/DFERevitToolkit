@@ -158,5 +158,15 @@ namespace DfEIfcNamer.Services
         public IList<AdsClassificationEntry> GetAdsClassifications() => _spaceZone.GetAdsClassifications();
         public ClassificationSyncResult BuildClassificationSyncPreview(Document doc, IList<long> categoryIds) => _classificationSync.BuildPreview(doc, categoryIds);
         public ApplyResult ApplyClassificationSync(Document doc, IEnumerable<ClassificationSyncPreviewRow> rows) => _classificationSync.Apply(doc, rows);
+        public IList<string> GetExistingSystemNames(Document doc)
+        {
+            return new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Select(e => e.LookupParameter("SystemName")?.AsString())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
     }
 }
