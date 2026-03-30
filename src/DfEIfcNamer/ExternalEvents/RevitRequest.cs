@@ -41,6 +41,8 @@ namespace DfEIfcNamer.ExternalEvents
         ,
         GenerateClassificationSyncPreview,
         ApplyClassificationSync
+        ,
+        GetExistingSystemNames
     }
 
     public class RevitRequest
@@ -85,5 +87,6 @@ namespace DfEIfcNamer.ExternalEvents
         public IList<AdsClassificationEntry> AdsClassifications { get; set; }
         public ClassificationSyncResult ClassificationSyncResult { get; set; }
         public string Error { get; set; }
+        public IList<string> ExistingSystemNames { get; set; }
     }
 }

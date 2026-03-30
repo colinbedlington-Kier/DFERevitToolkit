@@ -23,6 +23,7 @@ namespace DfEIfcNamer.ViewModels
             _dispatcher = dispatcher;
             Setup = new SetupViewModel(dispatcher);
             Naming = new NamingViewModel(dispatcher);
+            SystemAssignment = new SystemAssignmentViewModel(dispatcher, Naming);
             HeaderData = new HeaderDataViewModel(dispatcher);
             SpaceZone = new SpaceZoneViewModel(dispatcher);
             ClassificationSync = new ClassificationSyncViewModel(dispatcher);
@@ -34,6 +35,7 @@ namespace DfEIfcNamer.ViewModels
         public event Action RequestClose;
         public SetupViewModel Setup { get; }
         public NamingViewModel Naming { get; }
+        public SystemAssignmentViewModel SystemAssignment { get; }
         public HeaderDataViewModel HeaderData { get; }
         public SpaceZoneViewModel SpaceZone { get; }
         public ClassificationSyncViewModel ClassificationSync { get; }
@@ -52,11 +54,15 @@ namespace DfEIfcNamer.ViewModels
     public class SetupViewModel : ViewModelBase
     {
         private readonly RevitRequestDispatcher _dispatcher;
+        private readonly UiThemeService _themeService = new UiThemeService();
+        private readonly ResourceFileLoader _resourceLoader = new ResourceFileLoader();
         public SetupViewModel(RevitRequestDispatcher dispatcher)
         {
             _dispatcher = dispatcher;
             ParameterStatuses = new ObservableCollection<RequiredParameterStatus>();
             Log = new ObservableCollection<string>();
+            WarningLog = new ObservableCollection<string>();
+            ErrorLog = new ObservableCollection<string>();
             Categories = new ObservableCollection<CategorySelectionItem>();
             CheckSetupCommand = new RelayCommand(_ => CheckSetup());
             CreateMissingParametersCommand = new RelayCommand(_ => CreateParameters());
@@ -65,11 +71,17 @@ namespace DfEIfcNamer.ViewModels
             ExportSetupReportCommand = new RelayCommand(_ => ExportReport());
             CopyDebugReportCommand = new RelayCommand(_ => CopyDebugReport());
             Status = "Not checked";
+            var theme = _themeService.LoadTheme();
+            DebugLines.Add("Theme config: " + (string.IsNullOrWhiteSpace(theme?.PrimaryColor) ? "unavailable" : "loaded"));
+            var logoResource = _resourceLoader.ResolveEmbeddedResourceName("Brand/kier_logo.png");
+            DebugLines.Add("Logo resource: " + (string.IsNullOrWhiteSpace(logoResource) ? "missing" : "resolved"));
             LoadCategories();
         }
 
         public ObservableCollection<RequiredParameterStatus> ParameterStatuses { get; }
         public ObservableCollection<string> Log { get; }
+        public ObservableCollection<string> WarningLog { get; }
+        public ObservableCollection<string> ErrorLog { get; }
         public ObservableCollection<CategorySelectionItem> Categories { get; }
         public ICommand CheckSetupCommand { get; }
         public ICommand CreateMissingParametersCommand { get; }
@@ -192,6 +204,8 @@ namespace DfEIfcNamer.ViewModels
             ParameterStatuses.Clear();
             foreach (var row in setup?.Parameters ?? Enumerable.Empty<RequiredParameterStatus>()) ParameterStatuses.Add(row);
             DebugLines.Clear();
+            WarningLog.Clear();
+            ErrorLog.Clear();
             DebugLines.Add($"Manifest loaded: {(setup?.ManifestLoaded == true ? "Yes" : "No")} ({setup?.ManifestTotalRowsCount ?? 0} rows)");
             DebugLines.Add($"Manifest parsed: {setup?.ManifestParsedRowsCount ?? 0} OK, {setup?.ManifestFailedRowsCount ?? 0} failed");
             DebugLines.Add($"Manifest source: {setup?.ManifestSource ?? "unknown"}");
@@ -202,8 +216,18 @@ namespace DfEIfcNamer.ViewModels
             DebugLines.Add($"Shared definitions parsed: {setup?.SharedParameterDefinitionsCount ?? 0}");
             DebugLines.Add($"Manifest/shared matches: {setup?.MatchedSharedParameterDefinitionsCount ?? 0}");
             DebugLines.Add($"Projected setup rows: {setup?.ProjectedRowsCount ?? 0}");
-            foreach (var ex in setup?.Exceptions ?? Enumerable.Empty<string>()) DebugLines.Add("Exception: " + ex);
-            foreach (var rowErr in setup?.RowLevelErrors ?? Enumerable.Empty<string>()) DebugLines.Add("Row error: " + rowErr);
+            foreach (var ex in setup?.Exceptions ?? Enumerable.Empty<string>())
+            {
+                var line = "Exception: " + ex;
+                DebugLines.Add(line);
+                ErrorLog.Add(line);
+            }
+            foreach (var rowErr in setup?.RowLevelErrors ?? Enumerable.Empty<string>())
+            {
+                var line = "Row error: " + rowErr;
+                DebugLines.Add(line);
+                WarningLog.Add(line);
+            }
             DebugStatus = DebugLines.Any(x => x.StartsWith("Exception:") || x.StartsWith("Row error:")) ? "Debug: failures detected." : "Debug: no setup exceptions detected.";
             if (!string.IsNullOrWhiteSpace(Status)) Log.Add(Status);
         }
@@ -360,8 +384,8 @@ namespace DfEIfcNamer.ViewModels
         {
             var dialog = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "DfE_NamingReport.csv" };
             if (dialog.ShowDialog() != true) return;
-            var lines = new[] { "Scope,Target,ElementId,Category,Family,Type,CurrentIFCName,ProposedIFCName,CurrentIFCNameType,ProposedIFCNameType,CurrentSystemName,ProposedSystemName,ProposedIfcEntity,ProposedExportToIfcAs,ProposedIfcPredefinedType,Status" }
-                .Concat(Rows.Select(r => $"Instance+Type,{r.ElementId},{r.ElementId},{r.Category},{r.Family},{r.Type},{r.CurrentIfcName},{r.ProposedIfcName},{r.CurrentIfcTypeName},{r.ProposedIfcTypeName},{r.CurrentSystemName},{r.ProposedSystemName},{r.ProposedIfcEntity},{r.ProposedIfcExportAs},{r.ProposedIfcPredefinedType},{r.Status}"));
+            var lines = new[] { "Scope,Target,ElementId,Category,Family,Type,CurrentIFCName,ProposedIFCName,CurrentIFCNameType,ProposedIFCNameType,CurrentSystemName,ProposedSystemName,OriginalClassification,MatchedPrefix,ResolvedSystemTemplate,UserDefinedStatus,ValidationError,ProposedSystemCategory,ProposedIfcEntity,ProposedExportToIfcAs,ProposedIfcPredefinedType,Status" }
+                .Concat(Rows.Select(r => $"Instance+Type,{r.ElementId},{r.ElementId},{r.Category},{r.Family},{r.Type},{r.CurrentIfcName},{r.ProposedIfcName},{r.CurrentIfcTypeName},{r.ProposedIfcTypeName},{r.CurrentSystemName},{r.ProposedSystemName},{r.SourceSsNumber},{r.MatchedSystemPrefix},{r.ProposedSystemDescription},{r.IsUserDefinedSystem},{r.UserDefinedValidationError},{r.ProposedSystemCategory},{r.ProposedIfcEntity},{r.ProposedIfcExportAs},{r.ProposedIfcPredefinedType},{r.Status}"));
             File.WriteAllLines(dialog.FileName, lines);
         }
 
@@ -475,6 +499,159 @@ namespace DfEIfcNamer.ViewModels
         }
     }
 
+    public class SystemAssignmentViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+        private readonly NamingViewModel _naming;
+        private readonly SystemCatalogService _catalogService = new SystemCatalogService();
+        private readonly ObservableCollection<string> _existingSystemNames = new ObservableCollection<string>();
+
+        public SystemAssignmentViewModel(RevitRequestDispatcher dispatcher, NamingViewModel naming)
+        {
+            _dispatcher = dispatcher;
+            _naming = naming;
+            SuggestedSystems = new ObservableCollection<SystemCandidateOption>();
+            AllAllowedSystems = new ObservableCollection<string>();
+            AutoResolveCommand = new RelayCommand(_ => AutoResolve());
+            ValidateCommand = new RelayCommand(_ => Validate());
+            SelectAllCommand = new RelayCommand(_ => SelectAll());
+            ApplyCommand = _naming.ApplySystemDataCommand;
+            ExportCommand = _naming.ExportReportCommand;
+            LoadAllAllowedSystems();
+            LoadExistingSystemNames();
+        }
+
+        public ObservableCollection<NamingPreviewRow> Rows => _naming.Rows;
+        public ObservableCollection<string> Warnings => _naming.Warnings;
+        public ObservableCollection<SystemCandidateOption> SuggestedSystems { get; }
+        public ObservableCollection<string> AllAllowedSystems { get; }
+        public ICommand AutoResolveCommand { get; }
+        public ICommand ValidateCommand { get; }
+        public ICommand SelectAllCommand { get; }
+        public ICommand ApplyCommand { get; }
+        public ICommand ExportCommand { get; }
+
+        public string UserDefinedName { get; set; }
+        public string UserDefinedDescription { get; set; }
+        public bool AddAsNextSystem { get; set; }
+        public string SelectedSuggestedSystem { get; set; }
+        public string SelectedAllowedSystem { get; set; }
+        public string RowFilterText { get; set; }
+
+        private string _status = "System assignment ready.";
+        public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
+
+        private void AutoResolve()
+        {
+            var selected = Rows.Where(r => r.IsSelected).ToList();
+            var relevantRows = selected.Any() ? selected : Rows.ToList();
+            var withSs = relevantRows.Where(r => !string.IsNullOrWhiteSpace(r.SourceSsNumber)).ToList();
+
+            var candidates = withSs
+                .SelectMany(r => _catalogService.ResolveCandidatesByClassification(r.SourceSsNumber)
+                    .Select(c => new SystemCandidateOption { SystemName = c.SystemName, MatchedPrefix = c.MatchedPrefix, MatchLength = c.MatchedPrefix?.Length ?? 0 }))
+                .GroupBy(c => c.SystemName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.OrderByDescending(x => x.MatchLength).First())
+                .OrderByDescending(x => x.MatchLength)
+                .ThenBy(x => x.SystemName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            SuggestedSystems.Clear();
+            foreach (var candidate in candidates) SuggestedSystems.Add(candidate);
+            if (SuggestedSystems.Any()) SelectedSuggestedSystem = SuggestedSystems.First().SystemName;
+
+            var chosen = !string.IsNullOrWhiteSpace(SelectedSuggestedSystem) ? SelectedSuggestedSystem : SelectedAllowedSystem;
+            foreach (var row in relevantRows)
+            {
+                if (!string.IsNullOrWhiteSpace(chosen))
+                {
+                    row.ProposedSystemName = AddAsNextSystem ? NextSystemName(chosen) : chosen;
+                    row.IsUserDefinedSystem = false;
+                }
+                else if (string.IsNullOrWhiteSpace(row.CandidateSystems))
+                {
+                    row.IsUserDefinedSystem = true;
+                }
+            }
+
+            var unresolved = relevantRows.Count(r => string.IsNullOrWhiteSpace(r.CandidateSystems));
+            Status = $"Rows selected: {relevantRows.Count}, rows with Ss number: {withSs.Count}, candidate systems found: {SuggestedSystems.Count}, unmatched rows: {unresolved}.";
+        }
+
+        private void Validate()
+        {
+            var invalid = 0;
+            foreach (var row in Rows.Where(r => r.IsSelected && r.IsUserDefinedSystem))
+            {
+                row.ProposedSystemName = UserDefinedName;
+                row.ProposedSystemDescription = UserDefinedDescription;
+                row.UserDefinedValidationError = AuthoringNamingService.ValidateUserDefinedSystemName(UserDefinedName);
+                if (!string.IsNullOrWhiteSpace(row.UserDefinedValidationError))
+                {
+                    invalid++;
+                }
+            }
+
+            Status = invalid > 0
+                ? $"Validation failed for {invalid} selected USERDEFINED rows. Expected ^[A-Z][A-Za-z0-9]*_System\\d{{2}}$."
+                : "User-defined system input valid.";
+        }
+
+        private void LoadAllAllowedSystems()
+        {
+            AllAllowedSystems.Clear();
+            foreach (var item in _catalogService.GetAllAllowedSystems().Select(x => x.SystemName).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                AllAllowedSystems.Add(item);
+            }
+        }
+
+        private void LoadExistingSystemNames()
+        {
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.GetExistingSystemNames,
+                Callback = r =>
+                {
+                    _existingSystemNames.Clear();
+                    foreach (var value in r.ExistingSystemNames ?? Enumerable.Empty<string>()) _existingSystemNames.Add(value);
+                }
+            });
+        }
+
+        private string NextSystemName(string selectedBase)
+        {
+            var baseName = (selectedBase ?? string.Empty).Replace("_SystemXX", string.Empty).Trim();
+            var pattern = new System.Text.RegularExpressions.Regex("^" + System.Text.RegularExpressions.Regex.Escape(baseName) + "_System(\\d{2})$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var max = 0;
+            foreach (var existing in _existingSystemNames)
+            {
+                var match = pattern.Match(existing ?? string.Empty);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var parsed))
+                {
+                    max = Math.Max(max, parsed);
+                }
+            }
+
+            return $"{baseName}_System{(max + 1):00}";
+        }
+
+        private void SelectAll()
+        {
+            var filter = RowFilterText?.Trim();
+            foreach (var row in Rows)
+            {
+                if (string.IsNullOrWhiteSpace(filter) ||
+                    (row.Category?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                    (row.SourceSsNumber?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                    (row.ProposedSystemName?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    row.IsSelected = true;
+                }
+            }
+        }
+    }
+
     public class SpaceZoneViewModel : ViewModelBase
     {
         private readonly RevitRequestDispatcher _dispatcher;
@@ -571,7 +748,7 @@ namespace DfEIfcNamer.ViewModels
 
             foreach (var row in selectedRows) row.ProposedZoneName = ProposedZoneName;
             foreach (var row in selectedRows) row.ProposedAdsClassification = ProposedAdsClassification;
-            foreach (var row in selectedRows) row.ProposedAdsText = ProposedAdsClassification;
+            foreach (var row in selectedRows) row.ProposedAdsText = ProposedAdsClassification?.Split(new[] { " : " }, StringSplitOptions.None).FirstOrDefault() ?? ProposedAdsClassification;
             _dispatcher.Raise(new RevitRequest
             {
                 Id = RevitRequestId.ApplyZoneName,
@@ -622,6 +799,8 @@ namespace DfEIfcNamer.ViewModels
         public ObservableCollection<string> Warnings { get; }
         public ICommand GeneratePreviewCommand { get; }
         public ICommand ApplyCommand { get; }
+        private bool _canApply = true;
+        public bool CanApply { get => _canApply; set { _canApply = value; RaisePropertyChanged(); } }
         private string _status = "Not run.";
         public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
 
@@ -636,13 +815,22 @@ namespace DfEIfcNamer.ViewModels
                     foreach (var row in r.ClassificationSyncResult?.Rows ?? Enumerable.Empty<ClassificationSyncPreviewRow>()) Rows.Add(row);
                     Warnings.Clear();
                     foreach (var w in r.ClassificationSyncResult?.Warnings ?? Enumerable.Empty<string>()) Warnings.Add(w);
-                    Status = $"Preview rows: {Rows.Count}, type targets: {r.ClassificationSyncResult?.TypeTargets ?? 0}, instance targets: {r.ClassificationSyncResult?.InstanceTargets ?? 0}";
+                    var selected = r.ClassificationSyncResult?.SelectedCount ?? 0;
+                    var classified = r.ClassificationSyncResult?.ClassifiedCount ?? 0;
+                    var missing = r.ClassificationSyncResult?.MissingClassificationCount ?? 0;
+                    CanApply = classified > 0;
+                    Status = $"Selected: {selected}, classified: {classified}, missing classification: {missing}. Preview rows: {Rows.Count}, type targets: {r.ClassificationSyncResult?.TypeTargets ?? 0}, instance targets: {r.ClassificationSyncResult?.InstanceTargets ?? 0}";
                 }
             });
         }
 
         private void Apply()
         {
+            if (!CanApply)
+            {
+                Status = "Apply disabled: no valid Classification.Uniclass values available to sync.";
+                return;
+            }
             _dispatcher.Raise(new RevitRequest
             {
                 Id = RevitRequestId.ApplyClassificationSync,
