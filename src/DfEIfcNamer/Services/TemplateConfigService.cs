@@ -10,7 +10,7 @@ namespace DfEIfcNamer.Services
     public class TemplateConfigService
     {
         private const string NamingFileName = "default_naming_codes.json";
-        private const string SystemsFileName = "DfeSystemCatalog.csv";
+        private const string SystemsFileName = "dfe_system_catalog.json";
         private readonly ResourceFileLoader _resourceLoader = new ResourceFileLoader();
         public string LastNamingCodesSource { get; private set; } = "embedded";
         public string LastSystemsSource { get; private set; } = "embedded";
@@ -26,8 +26,8 @@ namespace DfEIfcNamer.Services
         {
             var externalPath = _resourceLoader.ResolveExternalResourcePath(SystemsFileName);
             LastSystemsSource = File.Exists(externalPath) ? $"external:{externalPath}" : $"embedded:{_resourceLoader.ResolveEmbeddedResourceName(SystemsFileName)}";
-            var csvLines = _resourceLoader.LoadCsvResourceOrFile(SystemsFileName);
-            return ParseSystemsCsv(csvLines);
+            var payload = _resourceLoader.LoadTextResourceOrFile(SystemsFileName);
+            return ParseSystemsJson(payload);
         }
 
         public IList<NamingCodeMapEntry> LoadNamingCodesFromPath(string path)
@@ -50,7 +50,9 @@ namespace DfEIfcNamer.Services
             {
                 return ParseSystemsCsv(File.ReadAllLines(path));
             }
-            return ParseSystemsJson(File.ReadAllText(path));
+            return path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                ? ParseSystemsJson(File.ReadAllText(path))
+                : ParseSystemsCsv(File.ReadAllLines(path));
         }
 
         public void SaveHeaderTemplate(string path, HeaderDataModel model)
@@ -119,18 +121,24 @@ namespace DfEIfcNamer.Services
             var entries = new List<SystemRegistryEntry>();
             using (var doc = JsonDocument.Parse(json))
             {
-                if (doc.RootElement.ValueKind != JsonValueKind.Array) return entries;
-                foreach (var row in doc.RootElement.EnumerateArray())
+                var sourceArray = doc.RootElement.ValueKind == JsonValueKind.Array
+                    ? doc.RootElement.EnumerateArray()
+                    : (doc.RootElement.TryGetProperty("systems", out var systems) && systems.ValueKind == JsonValueKind.Array
+                        ? systems.EnumerateArray()
+                        : Enumerable.Empty<JsonElement>());
+
+                foreach (var row in sourceArray)
                 {
-                    var name = Read(row, "SystemName", "Name", "System");
+                    var name = Read(row, "SystemName", "Name", "System", "systemNameTemplate");
                     if (string.IsNullOrWhiteSpace(name)) continue;
                     entries.Add(new SystemRegistryEntry
                     {
                         SystemName = name,
-                        SystemDescription = Read(row, "SystemDescription", "Description"),
+                        SystemDescription = Read(row, "SystemDescription", "Description", "baseDescription"),
                         Discipline = Read(row, "Discipline"),
                         AllowedCategories = ReadArray(row, "AllowedCategories", "Categories"),
-                        AllowedIfcClasses = ReadArray(row, "AllowedIfcClasses", "IfcClasses")
+                        AllowedIfcClasses = ReadArray(row, "AllowedIfcClasses", "IfcClasses"),
+                        AllowedCategoryPrefixes = ReadArray(row, "allowedCategoryPrefixes", "AllowedCategoryPrefixes")
                     });
                 }
             }

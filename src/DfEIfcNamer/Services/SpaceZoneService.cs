@@ -239,12 +239,20 @@ namespace DfEIfcNamer.Services
             {
                 code = payload.Split(new[] { " - " }, 2, StringSplitOptions.None)[0].Trim();
             }
+            else if (payload.Contains(" : "))
+            {
+                code = payload.Split(new[] { " : " }, 2, StringSplitOptions.None)[0].Trim();
+            }
 
             var matched = _ads.FirstOrDefault(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
             var description = matched?.Description;
             if (string.IsNullOrWhiteSpace(description) && payload.Contains(" - "))
             {
                 description = payload.Split(new[] { " - " }, 2, StringSplitOptions.None)[1].Trim();
+            }
+            else if (string.IsNullOrWhiteSpace(description) && payload.Contains(" : "))
+            {
+                description = payload.Split(new[] { " : " }, 2, StringSplitOptions.None)[1].Trim();
             }
 
             return (code, description ?? string.Empty);
@@ -256,7 +264,7 @@ namespace DfEIfcNamer.Services
             var formatted = "[DfE ADS Classification] " + code.Trim();
             if (!string.IsNullOrWhiteSpace(description))
             {
-                formatted += " - " + description.Trim();
+                formatted += " : " + description.Trim();
             }
 
             return formatted;

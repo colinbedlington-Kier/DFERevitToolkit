@@ -70,8 +70,10 @@ namespace DfEIfcNamer.Models
         public string SystemName { get; set; }
         public string SystemDescription { get; set; }
         public string Discipline { get; set; }
+        public string MatchedPrefix { get; set; }
         public List<string> AllowedCategories { get; set; } = new List<string>();
         public List<string> AllowedIfcClasses { get; set; } = new List<string>();
+        public List<string> AllowedCategoryPrefixes { get; set; } = new List<string>();
     }
 
     public class NamingPreviewRow
@@ -90,6 +92,12 @@ namespace DfEIfcNamer.Models
         public string CurrentSystemName { get; set; }
         public string ProposedSystemName { get; set; }
         public string ProposedSystemDescription { get; set; }
+        public string ProposedSystemCategory { get; set; }
+        public string SourceSsNumber { get; set; }
+        public string SourceSsDescription { get; set; }
+        public string MatchedSystemPrefix { get; set; }
+        public bool IsUserDefinedSystem { get; set; }
+        public string UserDefinedValidationError { get; set; }
         public string ProposedIfcExportAs { get; set; }
         public string ProposedIfcEntity { get; set; }
         public string ProposedIfcPredefinedType { get; set; }
@@ -244,6 +252,7 @@ namespace DfEIfcNamer.Models
     {
         public string Code { get; set; }
         public string Description { get; set; }
+        public string DisplayText => string.IsNullOrWhiteSpace(Description) ? Code : $"{Code} : {Description}";
     }
 
     public class ClassificationSyncPreviewRow
@@ -272,6 +281,9 @@ namespace DfEIfcNamer.Models
     public class ClassificationSyncResult
     {
         public IList<ClassificationSyncPreviewRow> Rows { get; set; } = new List<ClassificationSyncPreviewRow>();
+        public int SelectedCount { get; set; }
+        public int ClassifiedCount { get; set; }
+        public int MissingClassificationCount { get; set; }
         public int SourceRows { get; set; }
         public int TypeTargets { get; set; }
         public int InstanceTargets { get; set; }

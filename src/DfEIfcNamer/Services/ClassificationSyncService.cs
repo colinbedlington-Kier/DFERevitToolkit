@@ -18,6 +18,7 @@ namespace DfEIfcNamer.Services
                 .WhereElementIsNotElementType()
                 .Where(e => e.Category != null && (selected.Count == 0 || selected.Contains(e.Category.Id.Value)))
                 .ToList();
+            result.SelectedCount = elements.Count;
 
             foreach (var element in elements)
             {
@@ -33,7 +34,11 @@ namespace DfEIfcNamer.Services
                 if (string.IsNullOrWhiteSpace(prNumber) &&
                     string.IsNullOrWhiteSpace(ssNumber) &&
                     string.IsNullOrWhiteSpace(enName) &&
-                    string.IsNullOrWhiteSpace(efName)) continue;
+                    string.IsNullOrWhiteSpace(efName))
+                {
+                    result.MissingClassificationCount++;
+                    continue;
+                }
 
                 var proposedC2 = !string.IsNullOrWhiteSpace(enName)
                     ? $"[Uniclass En Entities] {enName}".Trim()
@@ -58,6 +63,7 @@ namespace DfEIfcNamer.Services
                     Scope = "Type->Instance",
                     Status = "Ready"
                 });
+                result.ClassifiedCount++;
             }
 
             if (!elements.Any(e => doc.GetElement(e.GetTypeId())?.LookupParameter("Uniclass.Classification.En.Name") != null))
@@ -68,6 +74,10 @@ namespace DfEIfcNamer.Services
             result.SourceRows = result.Rows.Count;
             result.TypeTargets = result.Rows.Select(x => x.TypeElementId).Distinct().Count();
             result.InstanceTargets = result.Rows.Select(x => x.ElementId).Distinct().Count();
+            if (result.ClassifiedCount == 0)
+            {
+                result.Warnings.Add("No Classification.Uniclass values were found on the selected elements/types. Please complete the classification data using Autodesk Classification Manager before running Classification Sync.");
+            }
             return result;
         }
 
