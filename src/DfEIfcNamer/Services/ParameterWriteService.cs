@@ -106,7 +106,8 @@ namespace DfEIfcNamer.Services
             if (value == null) return LogSkipped(result, "Project", "Project", name, "null value");
 
             parameter.Set(value);
-            LogSuccess(result, "Project", "Project", name);
+            var matchedName = parameter.Definition?.Name ?? name;
+            LogSuccess(result, "Project", "Project", name, matchedName, !string.Equals(name, matchedName, StringComparison.Ordinal));
             return true;
         }
 
@@ -121,7 +122,8 @@ namespace DfEIfcNamer.Services
             if (value == null) return LogSkipped(result, "Room", element.Id.Value.ToString(), name, "null value");
 
             parameter.Set(value);
-            LogSuccess(result, "Room", element.Id.Value.ToString(), name);
+            var matchedName = parameter.Definition?.Name ?? name;
+            LogSuccess(result, "Room", element.Id.Value.ToString(), name, matchedName, !string.Equals(name, matchedName, StringComparison.Ordinal));
             return true;
         }
 
