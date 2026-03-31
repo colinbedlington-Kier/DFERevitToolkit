@@ -22,6 +22,31 @@ namespace DfEIfcNamer.Services
                 .ToList();
         }
 
-        private static string[] ParseCsvLine(string line) => (line ?? string.Empty).Split(',').Select(x => x.Trim()).ToArray();
+        private static string[] ParseCsvLine(string line)
+        {
+            var values = new List<string>();
+            var current = string.Empty;
+            var inQuotes = false;
+            foreach (var ch in line ?? string.Empty)
+            {
+                if (ch == '"')
+                {
+                    inQuotes = !inQuotes;
+                    continue;
+                }
+
+                if (ch == ',' && !inQuotes)
+                {
+                    values.Add(current.Trim());
+                    current = string.Empty;
+                    continue;
+                }
+
+                current += ch;
+            }
+
+            values.Add(current.Trim());
+            return values.ToArray();
+        }
     }
 }

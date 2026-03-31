@@ -1,9 +1,28 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace DfEIfcNamer.Models
 {
+    public abstract class ObservableModel : INotifyPropertyChanged
+    {
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected bool SetField<T>(ref T field, T value, [CallerMemberName] string propertyName = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value))
+            {
+                return false;
+            }
+
+            field = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            return true;
+        }
+    }
+
     public enum NamingScopeMode
     {
         CurrentSelection,
@@ -77,9 +96,12 @@ namespace DfEIfcNamer.Models
         public List<string> AllowedCategoryPrefixes { get; set; } = new List<string>();
     }
 
-    public class NamingPreviewRow
+    public class NamingPreviewRow : ObservableModel
     {
-        public bool IsSelected { get; set; } = true;
+        private bool _isSelected = true;
+        private string _proposedIfcPredefinedType;
+        private string _proposedUserDefinedPredefinedType;
+        public bool IsSelected { get => _isSelected; set => SetField(ref _isSelected, value); }
         public long ElementId { get; set; }
         public long TypeElementId { get; set; }
         public string Category { get; set; }
@@ -102,8 +124,8 @@ namespace DfEIfcNamer.Models
         public string CandidateSystems { get; set; }
         public string ProposedIfcExportAs { get; set; }
         public string ProposedIfcEntity { get; set; }
-        public string ProposedIfcPredefinedType { get; set; }
-        public string ProposedUserDefinedPredefinedType { get; set; }
+        public string ProposedIfcPredefinedType { get => _proposedIfcPredefinedType; set => SetField(ref _proposedIfcPredefinedType, value); }
+        public string ProposedUserDefinedPredefinedType { get => _proposedUserDefinedPredefinedType; set => SetField(ref _proposedUserDefinedPredefinedType, value); }
         public ObservableCollection<string> AllowedIfcPredefinedTypes { get; set; } = new ObservableCollection<string>();
         public string Status { get; set; }
         public bool Eligible { get; set; }
@@ -170,9 +192,13 @@ namespace DfEIfcNamer.Models
         public IList<string> Messages { get; set; } = new List<string>();
     }
 
-    public class SpaceZonePreviewRow
+    public class SpaceZonePreviewRow : ObservableModel
     {
-        public bool IsSelected { get; set; } = true;
+        private bool _isSelected = true;
+        private string _proposedZoneName;
+        private string _proposedAdsClassification;
+        private string _proposedAdsText;
+        public bool IsSelected { get => _isSelected; set => SetField(ref _isSelected, value); }
         public long ElementId { get; set; }
         public string Category { get; set; }
         public string Family { get; set; }
@@ -184,15 +210,15 @@ namespace DfEIfcNamer.Models
         public string CurrentSpaceReference { get; set; }
         public string ProposedSpaceReference { get; set; }
         public string CurrentZoneName { get; set; }
-        public string ProposedZoneName { get; set; }
+        public string ProposedZoneName { get => _proposedZoneName; set => SetField(ref _proposedZoneName, value); }
         public string CurrentZoneDescription { get; set; }
         public string ProposedZoneDescription { get; set; }
         public string CurrentZoneCategory { get; set; }
         public string ProposedZoneCategory { get; set; }
         public string CurrentAdsClassification { get; set; }
-        public string ProposedAdsClassification { get; set; }
+        public string ProposedAdsClassification { get => _proposedAdsClassification; set => SetField(ref _proposedAdsClassification, value); }
         public string CurrentAdsText { get; set; }
-        public string ProposedAdsText { get; set; }
+        public string ProposedAdsText { get => _proposedAdsText; set => SetField(ref _proposedAdsText, value); }
         public string Status { get; set; }
     }
 
@@ -303,9 +329,10 @@ namespace DfEIfcNamer.Models
         public string DisplayText => string.IsNullOrWhiteSpace(MatchedPrefix) ? SystemName : $"{SystemName} ({MatchedPrefix})";
     }
 
-    public class ComplianceCheckResult
+    public class ComplianceCheckResult : ObservableModel
     {
-        public bool IsSelected { get; set; } = true;
+        private bool _isSelected = true;
+        public bool IsSelected { get => _isSelected; set => SetField(ref _isSelected, value); }
         public long ElementId { get; set; }
         public string Category { get; set; }
         public string Family { get; set; }

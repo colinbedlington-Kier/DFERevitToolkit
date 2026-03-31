@@ -100,6 +100,9 @@ namespace DfEIfcNamer.ExternalEvents
                     case RevitRequestId.ApplyZoneName:
                         response.ApplyResult = _authoringService.ApplyZone(doc, _request.SpaceZoneRows);
                         break;
+                    case RevitRequestId.ApplyAdsClassification:
+                        response.ApplyResult = _authoringService.ApplyAds(doc, _request.SpaceZoneRows);
+                        break;
                     case RevitRequestId.GenerateClassificationSyncPreview:
                         response.ClassificationSyncResult = _authoringService.BuildClassificationSyncPreview(doc, _request.NamingRequest?.CategoryIds);
                         break;

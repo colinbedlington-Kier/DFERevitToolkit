@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Autodesk.Revit.DB;
@@ -136,7 +137,11 @@ namespace DfEIfcNamer.Services
                 row.TypeElementId = typeElement?.Id?.Value ?? -1;
                 row.Family = typeElement?.FamilyName ?? string.Empty;
                 row.Type = typeElement?.Name ?? string.Empty;
-                row.CurrentIfcTypeName = Get(typeElement, "IFCName [Type]", "IFCName[Type]");
+                row.CurrentIfcTypeName = Get(typeElement, "IFCName [Type]", "IFCName[Type]", "IfcName[Type]", "IfcName [Type]");
+                if (!string.IsNullOrWhiteSpace(row.CurrentIfcTypeName))
+                {
+                    Debug.WriteLine($"[DfEIfcNamer] Type parameter read: typeId={row.TypeElementId}, IFCName[Type]={row.CurrentIfcTypeName}");
+                }
 
                 var resolved = _ifcDefaults.ResolveDefaults(row.Category, row.Family, row.Type);
                 var descriptor = typeDescriptors.TryGetValue(row.TypeElementId, out var cached)
@@ -159,8 +164,20 @@ namespace DfEIfcNamer.Services
                 row.ProposedIfcExportAs = ifcClass;
                 row.ProposedIfcEntity = ifcClass;
                 row.ProposedIfcPredefinedType = predefinedSchema;
-                row.AllowedIfcPredefinedTypes = new System.Collections.ObjectModel.ObservableCollection<string>(_ifcDefaults.GetAllowedPredefinedTypes(ifcClass));
+                var allowed = _ifcDefaults.GetAllowedPredefinedTypes(ifcClass).ToList();
+                if (!string.IsNullOrWhiteSpace(row.ProposedIfcPredefinedType) &&
+                    !allowed.Any(x => string.Equals(x, row.ProposedIfcPredefinedType, StringComparison.OrdinalIgnoreCase)))
+                {
+                    allowed.Add(row.ProposedIfcPredefinedType.ToUpperInvariant());
+                }
+                if (!string.IsNullOrWhiteSpace(descriptor.PredefinedSchema) &&
+                    !allowed.Any(x => string.Equals(x, descriptor.PredefinedSchema, StringComparison.OrdinalIgnoreCase)))
+                {
+                    allowed.Add(descriptor.PredefinedSchema.ToUpperInvariant());
+                }
+                row.AllowedIfcPredefinedTypes = new System.Collections.ObjectModel.ObservableCollection<string>(allowed.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x));
                 row.ProposedUserDefinedPredefinedType = descriptor.UserDefined;
+                Debug.WriteLine($"[DfEIfcNamer] Predefined type list generated for {ifcClass}: {row.AllowedIfcPredefinedTypes.Count}");
 
                 row.ProposedIfcName = BuildInstanceName(doc, element, ifcClass, predefined, request, instanceCounter, doorRoomCounter, windowRoomCounter, out var status);
                 row.Status = status;

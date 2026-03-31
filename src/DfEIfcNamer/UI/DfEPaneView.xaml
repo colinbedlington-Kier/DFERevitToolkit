@@ -140,6 +140,7 @@
                         <Button Content="Validate" Command="{Binding Naming.ValidateCommand}"/>
                         <Button Content="Select All" Command="{Binding Naming.SelectAllRowsCommand}"/>
                         <Button Content="Unselect All" Command="{Binding Naming.UnselectAllRowsCommand}"/>
+                        <Button Content="Refresh" Command="{Binding Naming.RefreshCommand}"/>
                         <Button Content="Apply Filters" Command="{Binding Naming.ApplyFiltersCommand}"/>
                         <Button Content="Fill-down IFC Predefined Type" Command="{Binding Naming.FillDownPredefinedTypeCommand}"/>
                         <Button Content="Apply Instance Data" Command="{Binding Naming.ApplyIfcNameCommand}"/>
@@ -158,7 +159,7 @@
                     </WrapPanel>
                     <DataGrid Grid.Row="3" ItemsSource="{Binding Naming.FilteredRows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected}" Width="60"/>
+                            <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
                             <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110"/>
                             <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="120"/>
@@ -292,12 +293,14 @@
                         <Button Content="Resolve Rooms/Spaces" Command="{Binding SpaceZone.ResolveRoomsCommand}"/>
                         <Button Content="Select All" Command="{Binding SpaceZone.SelectAllRowsCommand}"/>
                         <Button Content="Unselect All" Command="{Binding SpaceZone.UnselectAllRowsCommand}"/>
+                        <Button Content="Refresh" Command="{Binding SpaceZone.RefreshCommand}"/>
                         <TextBlock Text="Zone" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <ComboBox Width="220" DisplayMemberPath="Name" SelectedValuePath="Name" Text="{Binding SpaceZone.ProposedZoneName, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" ItemsSource="{Binding SpaceZone.Zones}" Margin="0,0,8,8"/>
                         <TextBlock Text="ADS" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <ComboBox Width="260" DisplayMemberPath="DisplayText" SelectedValuePath="DisplayText" Text="{Binding SpaceZone.ProposedAdsClassification, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" ItemsSource="{Binding SpaceZone.AdsClassifications}" Margin="0,0,8,8"/>
                         <Button Content="Apply Room Data (SpaceReference)" Command="{Binding SpaceZone.ApplySpaceReferenceCommand}"/>
-                        <Button Content="Apply Room Data (Zone/ADS)" Command="{Binding SpaceZone.ApplyZoneNameCommand}"/>
+                        <Button Content="Apply Zone" Command="{Binding SpaceZone.ApplyZoneNameCommand}"/>
+                        <Button Content="Apply ADS" Command="{Binding SpaceZone.ApplyAdsCommand}"/>
                         <Button Content="Validate Assignment" Command="{Binding SpaceZone.ValidateAssignmentCommand}"/>
                         <Button Content="Export Assignment Report" Command="{Binding SpaceZone.ExportReportCommand}"/>
                     </WrapPanel>
@@ -311,7 +314,7 @@
                     </WrapPanel>
                     <DataGrid Grid.Row="1" Margin="0,34,0,0" ItemsSource="{Binding SpaceZone.FilteredRows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected}" Width="60"/>
+                            <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
                             <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110"/>
                             <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="120"/>

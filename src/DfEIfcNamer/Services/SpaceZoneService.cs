@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
@@ -20,7 +21,8 @@ namespace DfEIfcNamer.Services
         {
             try
             {
-                _zones = BuiltInZoneCatalog.Default();
+                _zones = BuiltInZoneCatalog.Default("/mnt/data/DfeZoneCatalog.csv");
+                Debug.WriteLine($"[DfEIfcNamer] Zone catalog load count: {_zones.Count}");
             }
             catch (System.IO.FileNotFoundException)
             {
@@ -29,7 +31,8 @@ namespace DfEIfcNamer.Services
 
             try
             {
-                _ads = BuiltInAdsClassificationCatalog.Default();
+                _ads = BuiltInAdsClassificationCatalog.Default("/mnt/data/DfeAdsCatalog.csv");
+                Debug.WriteLine($"[DfEIfcNamer] ADS catalog load count: {_ads.Count}");
             }
             catch (System.IO.FileNotFoundException)
             {
@@ -169,19 +172,17 @@ namespace DfEIfcNamer.Services
                         continue;
                     }
 
-                    var zoneUpdated = _parameterWriter.SetRoomParameter(element, "ZoneName", row.ProposedZoneName ?? string.Empty, result);
-                    _parameterWriter.SetRoomParameter(element, "ZoneDescription", row.ProposedZoneDescription ?? string.Empty, result);
-                    _parameterWriter.SetRoomParameter(element, "ZoneCategory", row.ProposedZoneCategory ?? string.Empty, result);
-                    var resolvedAds = ResolveAds(row.ProposedAdsClassification, GetAdsClassifications(doc));
-                    var classificationValue = FormatAdsClassification(resolvedAds.Code, resolvedAds.Description);
-                    var wroteClassification = _parameterWriter.SetRoomParameter(element, AdsClassificationParameterAliases[0], classificationValue, result);
-                    var wroteText = !string.IsNullOrWhiteSpace(resolvedAds.Code) && _parameterWriter.SetRoomParameter(element, AdsTextParameterAliases[0], resolvedAds.Code, result);
-                    if (wroteClassification) result.AdsClassificationUpdated++;
-                    if (wroteText) result.AdsTextUpdated++;
-                    if (!wroteClassification || !wroteText)
+                    if (string.IsNullOrWhiteSpace(row.ProposedZoneName))
                     {
-                        result.Logs.Add($"Scope=Room; Target={row.ElementId}; Parameter=DfE ADS Classification; Status=Failed; Reason=ADS write incomplete (classification={wroteClassification}, text={wroteText})");
+                        result.Skipped++;
+                        result.Logs.Add($"Scope=Room; Target={row.ElementId}; Parameter=ZoneName; Status=Skipped; Reason=null value");
+                        continue;
                     }
+
+                    var catalogZone = GetZones(doc).FirstOrDefault(z => string.Equals(z.Name, row.ProposedZoneName, StringComparison.OrdinalIgnoreCase));
+                    var zoneUpdated = _parameterWriter.SetRoomParameter(element, "ZoneName", row.ProposedZoneName ?? string.Empty, result);
+                    _parameterWriter.SetRoomParameter(element, "ZoneDescription", catalogZone?.Description ?? row.ProposedZoneDescription ?? string.Empty, result);
+                    _parameterWriter.SetRoomParameter(element, "ZoneCategory", catalogZone?.Category ?? row.ProposedZoneCategory ?? string.Empty, result);
 
                     if (zoneUpdated)
                     {
@@ -192,6 +193,45 @@ namespace DfEIfcNamer.Services
                 tx.Commit();
             }
 
+            return result;
+        }
+
+        public ApplyResult ApplyAds(Document doc, IEnumerable<SpaceZonePreviewRow> rows)
+        {
+            var result = new ApplyResult();
+            using (var tx = new Transaction(doc, "DfE Apply ADS"))
+            {
+                tx.Start();
+                foreach (var row in rows ?? Enumerable.Empty<SpaceZonePreviewRow>())
+                {
+                    var element = doc.GetElement(new ElementId(row.ElementId));
+                    if (!ParameterWriteService.IsRoom(element))
+                    {
+                        result.Skipped++;
+                        result.Logs.Add($"Scope=Room; Target={row.ElementId}; Parameter=DfE ADS Classification; Status=Skipped; Reason=Skipped non-room element for room-only parameter");
+                        continue;
+                    }
+
+                    var resolvedAds = ResolveAds(row.ProposedAdsClassification, GetAdsClassifications(doc));
+                    if (string.IsNullOrWhiteSpace(resolvedAds.Code))
+                    {
+                        result.Skipped++;
+                        result.Logs.Add($"Scope=Room; Target={row.ElementId}; Parameter=DfE ADS Classification; Status=Skipped; Reason=null value");
+                        continue;
+                    }
+
+                    var classificationValue = FormatAdsClassification(resolvedAds.Code, resolvedAds.Description);
+                    var wroteClassification = _parameterWriter.SetRoomParameter(element, AdsClassificationParameterAliases[0], classificationValue, result);
+                    var wroteText = _parameterWriter.SetRoomParameter(element, AdsTextParameterAliases[0], resolvedAds.Code, result);
+                    if (wroteClassification) result.AdsClassificationUpdated++;
+                    if (wroteText) result.AdsTextUpdated++;
+                    if (wroteClassification || wroteText)
+                    {
+                        result.Updated++;
+                    }
+                }
+                tx.Commit();
+            }
             return result;
         }
 

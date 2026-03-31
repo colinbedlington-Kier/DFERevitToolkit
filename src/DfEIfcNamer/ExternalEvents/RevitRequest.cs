@@ -24,6 +24,7 @@ namespace DfEIfcNamer.ExternalEvents
         ResolveSpaceZone,
         ApplySpaceReference,
         ApplyZoneName,
+        ApplyAdsClassification,
         RunAuthoringValidation,
         SyncCobieFromIfc,
         LoadMapping,
