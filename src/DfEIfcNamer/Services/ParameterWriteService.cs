@@ -128,6 +128,7 @@ namespace DfEIfcNamer.Services
         private ParameterResolutionContext ResolveParameterContext(Element target, string requestedName, string scope, string targetId, ApplyResult result)
         {
             var canonical = requestedName?.Trim();
+            var attempted = new List<string>();
             ParameterMatch match = null;
 
             try
@@ -145,23 +146,24 @@ namespace DfEIfcNamer.Services
                 LogDiagnostic(result, scope, targetId, canonical, "alias resolution failure", ex, "resolver threw before returning result");
             }
 
-            var aliasAttempt = match?.MatchedName;
-            if (!string.IsNullOrWhiteSpace(aliasAttempt))
+            if (Guid.TryParse(canonical, out var guid))
             {
-                var parameter = target.LookupParameter(aliasAttempt);
-                if (parameter != null)
+                attempted.Add("guid:" + canonical);
+                var guidParameter = target?.get_Parameter(guid);
+                if (guidParameter != null)
                 {
                     return new ParameterResolutionContext
                     {
-                        Parameter = parameter,
-                        MatchName = aliasAttempt,
-                        Detail = BuildDetail(match, canonical, aliasAttempt, "resolved alias name")
+                        Parameter = guidParameter,
+                        MatchName = guidParameter.Definition?.Name ?? canonical,
+                        Detail = BuildDetail(match, canonical, guidParameter.Definition?.Name ?? canonical, "shared parameter guid")
                     };
                 }
             }
 
             if (!string.IsNullOrWhiteSpace(canonical))
             {
+                attempted.Add("exact:" + canonical);
                 var canonicalParameter = target.LookupParameter(canonical);
                 if (canonicalParameter != null)
                 {
@@ -170,6 +172,46 @@ namespace DfEIfcNamer.Services
                         Parameter = canonicalParameter,
                         MatchName = canonical,
                         Detail = BuildDetail(match, canonical, canonical, "canonical name fallback")
+                    };
+                }
+            }
+
+            var aliasCandidates = (match?.AttemptedNames ?? Array.Empty<string>())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var alias in aliasCandidates)
+            {
+                attempted.Add("alias:" + alias);
+                var aliased = target.LookupParameter(alias);
+                if (aliased != null)
+                {
+                    return new ParameterResolutionContext
+                    {
+                        Parameter = aliased,
+                        MatchName = aliased.Definition?.Name ?? alias,
+                        Detail = BuildDetail(match, canonical, aliased.Definition?.Name ?? alias, "alias-resolved name")
+                    };
+                }
+            }
+
+            var manifestEntry = ParameterBindingManifest.FindByName(canonical);
+            var manifestNames = new[] { manifestEntry?.Name }
+                .Concat(manifestEntry?.Aliases ?? Array.Empty<string>())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var manifestName in manifestNames)
+            {
+                attempted.Add("manifest:" + manifestName);
+                var manifestParameter = target.LookupParameter(manifestName);
+                if (manifestParameter != null)
+                {
+                    return new ParameterResolutionContext
+                    {
+                        Parameter = manifestParameter,
+                        MatchName = manifestParameter.Definition?.Name ?? manifestName,
+                        Detail = BuildDetail(match, canonical, manifestParameter.Definition?.Name ?? manifestName, "canonical/manifest fallback")
                     };
                 }
             }
@@ -186,7 +228,7 @@ namespace DfEIfcNamer.Services
                 };
             }
 
-            var attempts = string.Join(" | ", BuildAttemptNames(match, canonical));
+            var attempts = string.Join(" | ", BuildAttemptNames(match, canonical).Concat(attempted).Distinct(StringComparer.OrdinalIgnoreCase));
             LogFailure(result, scope, targetId, canonical, "parameter not found; attempts=" + attempts);
 
             return new ParameterResolutionContext

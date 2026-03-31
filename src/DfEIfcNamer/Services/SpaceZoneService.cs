@@ -37,8 +37,37 @@ namespace DfEIfcNamer.Services
             }
         }
 
-        public IList<ZoneCatalogEntry> GetZones() => _zones.ToList();
-        public IList<AdsClassificationEntry> GetAdsClassifications() => _ads.ToList();
+        public IList<ZoneCatalogEntry> GetZones(Document doc = null)
+        {
+            var merged = _zones.ToList();
+            foreach (var modelZone in GetModelZones(doc))
+            {
+                if (!merged.Any(x => string.Equals(x.Name, modelZone.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    merged.Add(modelZone);
+                }
+            }
+
+            return merged
+                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        public IList<AdsClassificationEntry> GetAdsClassifications(Document doc = null)
+        {
+            var merged = _ads.ToList();
+            foreach (var modelAds in GetModelAds(doc))
+            {
+                if (!merged.Any(x => string.Equals(x.Code, modelAds.Code, StringComparison.OrdinalIgnoreCase)))
+                {
+                    merged.Add(modelAds);
+                }
+            }
+
+            return merged
+                .OrderBy(x => x.Code, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
 
         public SpaceZonePreviewResult BuildPreview(Document doc, SpaceZoneRequest request)
         {
@@ -53,8 +82,10 @@ namespace DfEIfcNamer.Services
                 var roomNumber = room?.Number ?? Get(element, "Number");
                 var roomName = room?.Name ?? Get(element, "Name");
                 if (string.IsNullOrWhiteSpace(roomNumber)) result.MissingRoomCount++;
-                var zone = _zones.FirstOrDefault(z => string.Equals(z.Name, request?.ProposedZoneName, StringComparison.OrdinalIgnoreCase));
-                var resolvedAds = ResolveAds(request?.ProposedAdsClassification);
+                var zones = GetZones(doc);
+                var adsCatalog = GetAdsClassifications(doc);
+                var zone = zones.FirstOrDefault(z => string.Equals(z.Name, request?.ProposedZoneName, StringComparison.OrdinalIgnoreCase));
+                var resolvedAds = ResolveAds(request?.ProposedAdsClassification, adsCatalog);
                 var proposedAdsClassification = FormatAdsClassification(resolvedAds.Code, resolvedAds.Description);
                 var proposedAdsText = resolvedAds.Code;
 
@@ -62,6 +93,8 @@ namespace DfEIfcNamer.Services
                 {
                     ElementId = element.Id.Value,
                     Category = element.Category?.Name ?? string.Empty,
+                    Family = GetFamily(doc, element),
+                    Type = GetType(doc, element),
                     FamilyType = BuildFamilyType(doc, element),
                     Level = doc.GetElement(element.LevelId)?.Name ?? string.Empty,
                     RoomNumber = roomNumber,
@@ -139,7 +172,7 @@ namespace DfEIfcNamer.Services
                     var zoneUpdated = _parameterWriter.SetRoomParameter(element, "ZoneName", row.ProposedZoneName ?? string.Empty, result);
                     _parameterWriter.SetRoomParameter(element, "ZoneDescription", row.ProposedZoneDescription ?? string.Empty, result);
                     _parameterWriter.SetRoomParameter(element, "ZoneCategory", row.ProposedZoneCategory ?? string.Empty, result);
-                    var resolvedAds = ResolveAds(row.ProposedAdsClassification);
+                    var resolvedAds = ResolveAds(row.ProposedAdsClassification, GetAdsClassifications(doc));
                     var classificationValue = FormatAdsClassification(resolvedAds.Code, resolvedAds.Description);
                     var wroteClassification = _parameterWriter.SetRoomParameter(element, AdsClassificationParameterAliases[0], classificationValue, result);
                     var wroteText = !string.IsNullOrWhiteSpace(resolvedAds.Code) && _parameterWriter.SetRoomParameter(element, AdsTextParameterAliases[0], resolvedAds.Code, result);
@@ -207,6 +240,18 @@ namespace DfEIfcNamer.Services
             return (family + " / " + type).Trim(' ', '/');
         }
 
+        private static string GetFamily(Document doc, Element element)
+        {
+            var symbol = doc.GetElement(element.GetTypeId()) as ElementType;
+            return symbol?.FamilyName ?? string.Empty;
+        }
+
+        private static string GetType(Document doc, Element element)
+        {
+            var symbol = doc.GetElement(element.GetTypeId()) as ElementType;
+            return symbol?.Name ?? string.Empty;
+        }
+
         private static string Get(Element element, params string[] parameterNames)
         {
             foreach (var parameterName in parameterNames ?? Array.Empty<string>())
@@ -221,7 +266,46 @@ namespace DfEIfcNamer.Services
             return string.Empty;
         }
 
+        private IList<ZoneCatalogEntry> GetModelZones(Document doc)
+        {
+            if (doc == null) return new List<ZoneCatalogEntry>();
+            return new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Where(e => ParameterWriteService.IsRoom(e))
+                .Select(e => new ZoneCatalogEntry
+                {
+                    Name = Get(e, "ZoneName"),
+                    Description = Get(e, "ZoneDescription"),
+                    Category = Get(e, "ZoneCategory")
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+                .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+        }
+
+        private IList<AdsClassificationEntry> GetModelAds(Document doc)
+        {
+            if (doc == null) return new List<AdsClassificationEntry>();
+            return new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Where(e => ParameterWriteService.IsRoom(e))
+                .Select(e => Get(e, AdsClassificationParameterAliases))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(ResolveAds)
+                .Where(x => !string.IsNullOrWhiteSpace(x.Code))
+                .Select(x => new AdsClassificationEntry { Code = x.Code, Description = x.Description })
+                .GroupBy(x => x.Code, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+        }
+
         private (string Code, string Description) ResolveAds(string source)
+        {
+            return ResolveAds(source, _ads);
+        }
+
+        private (string Code, string Description) ResolveAds(string source, IEnumerable<AdsClassificationEntry> adsSource)
         {
             if (string.IsNullOrWhiteSpace(source))
             {
@@ -244,7 +328,7 @@ namespace DfEIfcNamer.Services
                 code = payload.Split(new[] { " : " }, 2, StringSplitOptions.None)[0].Trim();
             }
 
-            var matched = _ads.FirstOrDefault(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+            var matched = (adsSource ?? _ads).FirstOrDefault(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
             var description = matched?.Description;
             if (string.IsNullOrWhiteSpace(description) && payload.Contains(" - "))
             {

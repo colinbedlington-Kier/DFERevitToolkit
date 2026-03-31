@@ -137,7 +137,7 @@ namespace DfEIfcNamer.Services
 
         public ApplyResult ApplyZone(Document doc, IEnumerable<SpaceZonePreviewRow> rows)
         {
-            _diagnostics.AddInfo("Authoring.SpaceZone", "Applying ZoneName values.");
+            _diagnostics.AddInfo("Authoring.SpaceZone", "Applying ZoneName/ZoneDescription/ZoneCategory and ADS values.");
             return _spaceZone.ApplyZone(doc, rows);
         }
 
@@ -154,8 +154,8 @@ namespace DfEIfcNamer.Services
 
         public IList<Category> GetCategories(Document doc, IList<ElementId> selected = null) => _cobieSync.GetModelCategories(doc, selected);
         public IList<SystemRegistryEntry> GetSystems() => _systemRegistry.GetEntries();
-        public IList<ZoneCatalogEntry> GetZones() => _spaceZone.GetZones();
-        public IList<AdsClassificationEntry> GetAdsClassifications() => _spaceZone.GetAdsClassifications();
+        public IList<ZoneCatalogEntry> GetZones(Document doc = null) => _spaceZone.GetZones(doc);
+        public IList<AdsClassificationEntry> GetAdsClassifications(Document doc = null) => _spaceZone.GetAdsClassifications(doc);
         public ClassificationSyncResult BuildClassificationSyncPreview(Document doc, IList<long> categoryIds) => _classificationSync.BuildPreview(doc, categoryIds);
         public ApplyResult ApplyClassificationSync(Document doc, IEnumerable<ClassificationSyncPreviewRow> rows) => _classificationSync.Apply(doc, rows);
         public IList<string> GetExistingSystemNames(Document doc)

@@ -159,18 +159,28 @@ namespace DfEIfcNamer.Services
                 row.ProposedIfcExportAs = ifcClass;
                 row.ProposedIfcEntity = ifcClass;
                 row.ProposedIfcPredefinedType = predefinedSchema;
+                row.AllowedIfcPredefinedTypes = new System.Collections.ObjectModel.ObservableCollection<string>(_ifcDefaults.GetAllowedPredefinedTypes(ifcClass));
                 row.ProposedUserDefinedPredefinedType = descriptor.UserDefined;
 
                 row.ProposedIfcName = BuildInstanceName(doc, element, ifcClass, predefined, request, instanceCounter, doorRoomCounter, windowRoomCounter, out var status);
                 row.Status = status;
                 row.Eligible = status == "OK" || status.StartsWith("WARN");
 
-                row.SourceSsNumber = Get(typeElement, "Classification.Uniclass.Ss.Number");
-                row.SourceSsDescription = Get(typeElement, "Classification.Uniclass.Ss.Description");
-                if (string.IsNullOrWhiteSpace(row.SourceSsNumber))
+                var ssNumberSource = GetPreferredParameterValue(typeElement, element,
+                    "Classification.Uniclass.Ss.Number",
+                    "Uniclass 2015 Ss Number",
+                    "Ss Number",
+                    "Classification(6)");
+                var ssDescriptionSource = GetPreferredParameterValue(typeElement, element,
+                    "Classification.Uniclass.Ss.Description",
+                    "Uniclass 2015 Ss Description",
+                    "Ss Description",
+                    "Classification(7)");
+                row.SourceSsNumber = ssNumberSource.Value;
+                row.SourceSsDescription = ssDescriptionSource.Value;
+                if (!string.IsNullOrWhiteSpace(ssNumberSource.Source))
                 {
-                    row.SourceSsNumber = Get(element, "Classification.Uniclass.Ss.Number");
-                    row.SourceSsDescription = Get(element, "Classification.Uniclass.Ss.Description");
+                    row.Status = AppendStatus(row.Status, "Ss source: " + ssNumberSource.Source);
                 }
 
                 var selectedSystem = _systemRegistry.Find(request.SelectedSystemName);
@@ -292,7 +302,7 @@ namespace DfEIfcNamer.Services
                                 {
                                     result.ExportAsUpdated++;
                                 }
-                                _parameterWriter.SetTypeParameter(doc, element, "IFC Predefined Type", row.ProposedIfcPredefinedType, result);
+                                TryWriteIfcPredefinedType(doc, element, row, result);
                                 _parameterWriter.SetTypeParameter(doc, element, "DfE_IFCPredefinedType", row.ProposedIfcPredefinedType, result);
                                 _parameterWriter.SetTypeParameter(doc, element, "DfE_IFCEntity", row.ProposedIfcEntity, result);
                                 _parameterWriter.SetTypeParameter(doc, element, "DfE_UserDefinedPredefinedTypeValue", row.ProposedUserDefinedPredefinedType, result);
@@ -327,9 +337,48 @@ namespace DfEIfcNamer.Services
             var exportValue = row.ProposedIfcEntity.StartsWith("Ifc", StringComparison.OrdinalIgnoreCase)
                 ? row.ProposedIfcEntity
                 : "Ifc" + row.ProposedIfcEntity;
+            var wroteBuiltIn = TryWriteBuiltInTypeParameter(doc, element, BuiltInParameter.IFC_EXPORT_ELEMENT_AS, exportValue, "Export to IFC As", result);
+            if (wroteBuiltIn) return true;
+
             return _parameterWriter.SetTypeParameter(doc, element, "Export to IFC As", exportValue, result)
                 || _parameterWriter.SetTypeParameter(doc, element, "IFC Export As", exportValue, result)
                 || _parameterWriter.SetTypeParameter(doc, element, "IfcExportAs", exportValue, result);
+        }
+
+        private bool TryWriteIfcPredefinedType(Document doc, Element element, NamingPreviewRow row, ApplyResult result)
+        {
+            var value = row?.ProposedIfcPredefinedType ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                result?.Logs.Add($"Scope=Type; Target={row?.ElementId}; Parameter=IFC Predefined Type; Status=Skipped; Reason=unresolved predefined type");
+                return false;
+            }
+
+            var wroteBuiltIn = TryWriteBuiltInTypeParameter(doc, element, BuiltInParameter.IFC_EXPORT_PREDEFINEDTYPE, value, "IFC Predefined Type", result);
+            if (wroteBuiltIn) return true;
+            return _parameterWriter.SetTypeParameter(doc, element, "IFC Predefined Type", value, result)
+                   || _parameterWriter.SetTypeParameter(doc, element, "IfcExportType", value, result);
+        }
+
+        private static bool TryWriteBuiltInTypeParameter(Document doc, Element element, BuiltInParameter builtInParameter, string value, string label, ApplyResult result)
+        {
+            var type = doc?.GetElement(element?.GetTypeId());
+            var parameter = type?.get_Parameter(builtInParameter);
+            if (parameter == null)
+            {
+                result?.Logs.Add($"Scope=Type; Target={element?.Id.Value}; Parameter={label}; Status=Skipped; Reason=built-in parameter unavailable");
+                return false;
+            }
+
+            if (parameter.IsReadOnly)
+            {
+                result?.Logs.Add($"Scope=Type; Target={type.Id.Value}; Parameter={label}; Status=Failed; Reason=built-in parameter read-only");
+                return false;
+            }
+
+            var wrote = parameter.Set(value ?? string.Empty);
+            result?.Logs.Add($"Scope=Type; Target={type.Id.Value}; Parameter={label}; Status={(wrote ? "Verified" : "Failed")}; Reason=built-in write {(wrote ? "succeeded" : "returned false")}");
+            return wrote;
         }
 
         private string BuildInstanceName(Document doc, Element element, string ifcClass, string predefined, NamingGenerationRequest req,
@@ -415,6 +464,23 @@ namespace DfEIfcNamer.Services
                     .ToList();
             }
 
+            if (request.ScopeMode == NamingScopeMode.SelectedCategories)
+            {
+                var selectedElements = new Autodesk.Revit.UI.UIDocument(doc).Selection.GetElementIds()
+                    .Select(id => doc.GetElement(id))
+                    .Where(e => e?.Category != null)
+                    .ToList();
+                var selectedCategoryIds = selectedElements.Select(e => e.Category.Id.Value).Distinct().ToHashSet();
+                if (selectedCategoryIds.Count == 0 && selected.Count > 0)
+                {
+                    selectedCategoryIds = selected;
+                }
+
+                return new FilteredElementCollector(doc).WhereElementIsNotElementType()
+                    .Where(e => e?.Category != null && selectedCategoryIds.Contains(e.Category.Id.Value))
+                    .ToList();
+            }
+
             var collector = request.ScopeMode == NamingScopeMode.CurrentView
                 ? new FilteredElementCollector(doc, doc.ActiveView.Id)
                 : new FilteredElementCollector(doc);
@@ -429,6 +495,26 @@ namespace DfEIfcNamer.Services
             }
 
             return all;
+        }
+
+        private static (string Value, string Source) GetPreferredParameterValue(Element typeElement, Element instanceElement, params string[] candidates)
+        {
+            foreach (var candidate in candidates ?? Array.Empty<string>())
+            {
+                var typeValue = typeElement?.LookupParameter(candidate)?.AsString();
+                if (!string.IsNullOrWhiteSpace(typeValue))
+                {
+                    return (typeValue, "type:" + candidate);
+                }
+
+                var instanceValue = instanceElement?.LookupParameter(candidate)?.AsString();
+                if (!string.IsNullOrWhiteSpace(instanceValue))
+                {
+                    return (instanceValue, "instance:" + candidate);
+                }
+            }
+
+            return (string.Empty, string.Empty);
         }
 
         private static string Get(Element element, params string[] names)

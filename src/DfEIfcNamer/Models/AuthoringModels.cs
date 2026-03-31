@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace DfEIfcNamer.Models
 {
@@ -103,6 +104,7 @@ namespace DfEIfcNamer.Models
         public string ProposedIfcEntity { get; set; }
         public string ProposedIfcPredefinedType { get; set; }
         public string ProposedUserDefinedPredefinedType { get; set; }
+        public ObservableCollection<string> AllowedIfcPredefinedTypes { get; set; } = new ObservableCollection<string>();
         public string Status { get; set; }
         public bool Eligible { get; set; }
     }
@@ -173,6 +175,8 @@ namespace DfEIfcNamer.Models
         public bool IsSelected { get; set; } = true;
         public long ElementId { get; set; }
         public string Category { get; set; }
+        public string Family { get; set; }
+        public string Type { get; set; }
         public string FamilyType { get; set; }
         public string Level { get; set; }
         public string RoomNumber { get; set; }

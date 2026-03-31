@@ -90,9 +90,9 @@
                 </Grid>
             </TabItem>
 
-            <TabItem Header="Object &amp; System Naming">
+            <TabItem Header="Object Naming">
                 <Grid Margin="8">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="100"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="100"/></Grid.RowDefinitions>
                     <WrapPanel>
                         <TextBlock Text="Scope" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <ComboBox Width="220" ItemsSource="{Binding Naming.ScopeModes}" SelectedItem="{Binding Naming.ScopeMode}" Margin="0,0,8,8"/>
@@ -105,12 +105,25 @@
                     <WrapPanel Grid.Row="1">
                         <Button Content="Generate Proposed Names" Command="{Binding Naming.GeneratePreviewCommand}"/>
                         <Button Content="Validate" Command="{Binding Naming.ValidateCommand}"/>
+                        <Button Content="Select All" Command="{Binding Naming.SelectAllRowsCommand}"/>
+                        <Button Content="Unselect All" Command="{Binding Naming.UnselectAllRowsCommand}"/>
+                        <Button Content="Apply Filters" Command="{Binding Naming.ApplyFiltersCommand}"/>
+                        <Button Content="Fill-down IFC Predefined Type" Command="{Binding Naming.FillDownPredefinedTypeCommand}"/>
                         <Button Content="Apply Instance Data" Command="{Binding Naming.ApplyIfcNameCommand}"/>
                         <Button Content="Apply Type Data" Command="{Binding Naming.ApplyIfcTypeCommand}"/>
                         <Button Content="Apply All" Command="{Binding Naming.ApplyAllCommand}"/>
                         <Button Content="Export Naming Report" Command="{Binding Naming.ExportReportCommand}"/>
                     </WrapPanel>
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding Naming.Rows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
+                    <WrapPanel Grid.Row="2">
+                        <TextBlock Text="Element Id" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="70" Text="{Binding Naming.FilterElementId, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Category" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="100" Text="{Binding Naming.FilterCategory, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Family" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="100" Text="{Binding Naming.FilterFamily, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Type" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="100" Text="{Binding Naming.FilterType, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="IFC Entity" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="100" Text="{Binding Naming.FilterIfcEntity, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="IFC Predefined" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="120" Text="{Binding Naming.FilterIfcPredefinedType, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Fill value" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="120" Text="{Binding Naming.FillDownIfcPredefinedType, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                    </WrapPanel>
+                    <DataGrid Grid.Row="3" ItemsSource="{Binding Naming.FilteredRows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
                         <DataGrid.Columns>
                             <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected}" Width="60"/>
                             <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
@@ -123,11 +136,24 @@
                             <DataGridTextColumn Header="Current IFCName[Type]" Binding="{Binding CurrentIfcTypeName}" Width="120"/>
                             <DataGridTextColumn Header="Proposed IFCName[Type]" Binding="{Binding ProposedIfcTypeName}" Width="140"/>
                             <DataGridTextColumn Header="Proposed IFC Entity" Binding="{Binding ProposedIfcEntity}" Width="120"/>
-                            <DataGridTextColumn Header="Proposed IFC Predefined Type" Binding="{Binding ProposedIfcPredefinedType}" Width="150"/>
+                            <DataGridComboBoxColumn Header="Proposed IFC Predefined Type" SelectedItemBinding="{Binding ProposedIfcPredefinedType, UpdateSourceTrigger=PropertyChanged}" DisplayMemberPath="." SelectedValuePath="." Width="170">
+                                <DataGridComboBoxColumn.ElementStyle>
+                                    <Style TargetType="ComboBox">
+                                        <Setter Property="ItemsSource" Value="{Binding AllowedIfcPredefinedTypes}"/>
+                                        <Setter Property="IsEditable" Value="True"/>
+                                    </Style>
+                                </DataGridComboBoxColumn.ElementStyle>
+                                <DataGridComboBoxColumn.EditingElementStyle>
+                                    <Style TargetType="ComboBox">
+                                        <Setter Property="ItemsSource" Value="{Binding AllowedIfcPredefinedTypes}"/>
+                                        <Setter Property="IsEditable" Value="True"/>
+                                    </Style>
+                                </DataGridComboBoxColumn.EditingElementStyle>
+                            </DataGridComboBoxColumn>
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="180"/>
                         </DataGrid.Columns>
                     </DataGrid>
-                    <StackPanel Grid.Row="3"><TextBlock Text="{Binding Naming.Status}" FontWeight="Bold"/><ListBox ItemsSource="{Binding Naming.Warnings}"/></StackPanel>
+                    <StackPanel Grid.Row="4"><TextBlock Text="{Binding Naming.Status}" FontWeight="Bold"/><ListBox ItemsSource="{Binding Naming.Warnings}"/></StackPanel>
                 </Grid>
             </TabItem>
 
@@ -138,6 +164,8 @@
                         <Button Content="Auto-Resolve" Command="{Binding SystemAssignment.AutoResolveCommand}"/>
                         <Button Content="Validate" Command="{Binding SystemAssignment.ValidateCommand}"/>
                         <Button Content="Select All" Command="{Binding SystemAssignment.SelectAllCommand}"/>
+                        <Button Content="Unselect All" Command="{Binding SystemAssignment.UnselectAllCommand}"/>
+                        <Button Content="Apply Filters" Command="{Binding SystemAssignment.ApplyFiltersCommand}"/>
                         <Button Content="Apply" Command="{Binding SystemAssignment.ApplyCommand}"/>
                         <Button Content="Report / Export" Command="{Binding SystemAssignment.ExportCommand}"/>
                         <CheckBox Content="Add as Next System" IsChecked="{Binding SystemAssignment.AddAsNextSystem}" Margin="0,0,8,8"/>
@@ -152,11 +180,20 @@
                         <TextBlock Text="Filter" VerticalAlignment="Center" Margin="8,0,4,0"/>
                         <TextBox Width="160" Text="{Binding SystemAssignment.RowFilterText, UpdateSourceTrigger=PropertyChanged}"/>
                     </WrapPanel>
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding SystemAssignment.Rows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
+                    <WrapPanel Grid.Row="1">
+                        <TextBlock Text="Category" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="100" Text="{Binding SystemAssignment.FilterCategory, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Family" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="100" Text="{Binding SystemAssignment.FilterFamily, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Type" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="100" Text="{Binding SystemAssignment.FilterType, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Ss Number" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="100" Text="{Binding SystemAssignment.FilterSsNumber, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Resolved System" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="140" Text="{Binding SystemAssignment.FilterResolvedSystem, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                    </WrapPanel>
+                    <DataGrid Grid.Row="1" Margin="0,34,0,0" ItemsSource="{Binding SystemAssignment.FilteredRows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
                         <DataGrid.Columns>
                             <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected}" Width="60"/>
                             <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="100"/>
+                            <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="120"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="120"/>
                             <DataGridTextColumn Header="Uniclass Ss Number" Binding="{Binding SourceSsNumber}" Width="150"/>
                             <DataGridTextColumn Header="Matched Prefix" Binding="{Binding MatchedSystemPrefix}" Width="120"/>
                             <DataGridTextColumn Header="Candidate Systems" Binding="{Binding CandidateSystems}" Width="220"/>
@@ -231,11 +268,21 @@
                         <Button Content="Validate Assignment" Command="{Binding SpaceZone.ValidateAssignmentCommand}"/>
                         <Button Content="Export Assignment Report" Command="{Binding SpaceZone.ExportReportCommand}"/>
                     </WrapPanel>
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding SpaceZone.Rows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
+                    <WrapPanel Grid.Row="1">
+                        <TextBlock Text="Category" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="90" Text="{Binding SpaceZone.FilterCategory, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Family" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="90" Text="{Binding SpaceZone.FilterFamily, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Type" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="90" Text="{Binding SpaceZone.FilterType, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Room" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="90" Text="{Binding SpaceZone.FilterRoom, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Zone" VerticalAlignment="Center" Margin="0,0,4,0"/><TextBox Width="90" Text="{Binding SpaceZone.FilterZone, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,8"/>
+                        <Button Content="Apply Filters" Command="{Binding SpaceZone.ApplyFiltersCommand}"/>
+                    </WrapPanel>
+                    <DataGrid Grid.Row="1" Margin="0,34,0,0" ItemsSource="{Binding SpaceZone.FilteredRows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
                         <DataGrid.Columns>
                             <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected}" Width="60"/>
                             <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110"/>
+                            <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="120"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="120"/>
                             <DataGridTextColumn Header="Room Number" Binding="{Binding RoomNumber}" Width="90"/>
                             <DataGridTextColumn Header="Current ADS Classification" Binding="{Binding CurrentAdsClassification}" Width="220"/>
                             <DataGridTextColumn Header="Proposed ADS" Binding="{Binding ProposedAdsClassification}" Width="220"/>

@@ -147,7 +147,7 @@ namespace DfEIfcNamer.Services
                         ? overrideScope
                         : ResolveExpectedScope(sharedName, entry);
 
-                    var existingParam = ResolveParameter(doc, aliases, expectedScope);
+                    var existingParam = ResolveParameter(doc, aliases, expectedScope, categories);
                     var actualScope = ResolveActualScope(bindings, aliases, existingParam, expectedScope);
                     var exists = existingParam != null;
                     var mismatch = exists && actualScope != expectedScope.ToString() && actualScope != "Unknown";
@@ -155,8 +155,8 @@ namespace DfEIfcNamer.Services
                     var result = exists ? (mismatch ? "ScopeMismatch" : "Verified") : "Missing";
                     var mismatchReason = mismatch ? $"Expected {expectedScope}, but found {actualScope}." : string.Empty;
                     var notes = exists
-                        ? (string.IsNullOrWhiteSpace(mismatchReason) ? "Bound." : mismatchReason)
-                        : "Not bound.";
+                        ? (string.IsNullOrWhiteSpace(mismatchReason) ? "Bound in project and resolvable on sampled target." : mismatchReason)
+                        : (HasBinding(bindings, aliases) ? "Binding exists but no sampled element/type currently exposes this parameter." : "Not bound.");
 
                     if (createMissing && (!exists || mismatch) && sharedMatch.Definition != null)
                     {
@@ -168,7 +168,7 @@ namespace DfEIfcNamer.Services
                             var groupType = expectedScope == ParameterScopeKind.Project ? GroupTypeId.Data : GroupTypeId.Ifc;
                             var inserted = doc.ParameterBindings.Insert(sharedMatch.Definition, binding, groupType);
                             if (!inserted) inserted = doc.ParameterBindings.ReInsert(sharedMatch.Definition, binding, groupType);
-                            existingParam = ResolveParameter(doc, aliases, expectedScope);
+                            existingParam = ResolveParameter(doc, aliases, expectedScope, categories);
                             exists = existingParam != null;
                             result = inserted && exists ? (mismatch ? "Replaced" : "Created") : "Failed";
                             notes = inserted ? "Insert/ReInsert executed." : "Revit binding API returned false.";
@@ -255,7 +255,20 @@ namespace DfEIfcNamer.Services
                 .ToList();
         }
 
-        private static Parameter ResolveParameter(Document doc, IEnumerable<string> names, ParameterScopeKind scope)
+        private static bool HasBinding(IReadOnlyDictionary<string, Binding> bindings, IEnumerable<string> aliases)
+        {
+            foreach (var alias in aliases ?? Enumerable.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(alias) && bindings.ContainsKey(alias))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static Parameter ResolveParameter(Document doc, IEnumerable<string> names, ParameterScopeKind scope, IList<Category> categories)
         {
             if (scope == ParameterScopeKind.Project)
             {
@@ -267,24 +280,38 @@ namespace DfEIfcNamer.Services
                 return null;
             }
 
-            var collector = new FilteredElementCollector(doc).WhereElementIsNotElementType();
-            var element = collector.FirstOrDefault();
+            var allowedCategoryIds = new HashSet<long>((categories ?? new List<Category>()).Select(c => c.Id.Value));
+            var collector = new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Where(e => e?.Category != null && (allowedCategoryIds.Count == 0 || allowedCategoryIds.Contains(e.Category.Id.Value)));
             if (scope == ParameterScopeKind.Type)
             {
-                var typed = collector.FirstOrDefault(e => e.GetTypeId() != ElementId.InvalidElementId);
-                var type = typed == null ? null : doc.GetElement(typed.GetTypeId());
-                foreach (var name in names)
+                var seenTypeIds = new HashSet<long>();
+                foreach (var instance in collector.Take(1000))
                 {
-                    var p = type?.LookupParameter(name);
-                    if (p != null) return p;
+                    var typeId = instance.GetTypeId();
+                    if (typeId == null || typeId == ElementId.InvalidElementId || !seenTypeIds.Add(typeId.Value))
+                    {
+                        continue;
+                    }
+
+                    var type = doc.GetElement(typeId);
+                    foreach (var name in names)
+                    {
+                        var p = type?.LookupParameter(name);
+                        if (p != null) return p;
+                    }
                 }
                 return null;
             }
 
-            foreach (var name in names)
+            foreach (var element in collector.Take(1000))
             {
-                var p = element?.LookupParameter(name);
-                if (p != null) return p;
+                foreach (var name in names)
+                {
+                    var p = element.LookupParameter(name);
+                    if (p != null) return p;
+                }
             }
 
             return null;
@@ -298,7 +325,7 @@ namespace DfEIfcNamer.Services
                 if (bindings.TryGetValue(alias, out var binding)) return binding is TypeBinding ? ParameterScopeKind.Type.ToString() : ParameterScopeKind.Instance.ToString();
             }
 
-            return existingParam == null ? "Missing" : "Unknown";
+            return existingParam == null ? "Missing" : expected.ToString();
         }
 
         private static ParameterScopeKind ResolveExpectedScope(string sharedName, ParameterBindingManifestEntry entry)
