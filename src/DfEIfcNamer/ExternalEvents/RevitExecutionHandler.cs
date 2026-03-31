@@ -109,6 +109,12 @@ namespace DfEIfcNamer.ExternalEvents
                     case RevitRequestId.GetExistingSystemNames:
                         response.ExistingSystemNames = _authoringService.GetExistingSystemNames(doc);
                         break;
+                    case RevitRequestId.RunComplianceValidation:
+                        response.ComplianceSummary = _authoringService.BuildComplianceReport(doc, _request.NamingRequest?.CategoryIds);
+                        break;
+                    case RevitRequestId.OpenComplianceReview3d:
+                        response.ApplyResult = _authoringService.OpenComplianceReview3d(app, _request.ElementIds);
+                        break;
                     case RevitRequestId.SyncCobieFromIfc:
                         response.SyncResult = _authoringService.SyncCobie(doc);
                         break;

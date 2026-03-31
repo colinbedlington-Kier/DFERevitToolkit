@@ -302,4 +302,55 @@ namespace DfEIfcNamer.Models
         public int MatchLength { get; set; }
         public string DisplayText => string.IsNullOrWhiteSpace(MatchedPrefix) ? SystemName : $"{SystemName} ({MatchedPrefix})";
     }
+
+    public class ComplianceCheckResult
+    {
+        public bool IsSelected { get; set; } = true;
+        public long ElementId { get; set; }
+        public string Category { get; set; }
+        public string Family { get; set; }
+        public string Type { get; set; }
+        public string Level { get; set; }
+        public string CurrentIfcName { get; set; }
+        public string CurrentIfcTypeName { get; set; }
+        public string CurrentIfcEntity { get; set; }
+        public string CurrentIfcPredefinedType { get; set; }
+        public string CurrentAdsClassification { get; set; }
+        public string CurrentSystemName { get; set; }
+        public string CurrentZoneName { get; set; }
+        public string RuleGroup { get; set; }
+        public string RuleId { get; set; }
+        public string RuleName { get; set; }
+        public string ExpectedRequirement { get; set; }
+        public string ActualValue { get; set; }
+        public string Status { get; set; }
+        public string Severity { get; set; }
+        public string Notes { get; set; }
+        public bool IsApplicable { get; set; } = true;
+        public bool IsFailed => string.Equals(Status, "Fail", StringComparison.OrdinalIgnoreCase);
+        public bool IsCompliant => string.Equals(Status, "Pass", StringComparison.OrdinalIgnoreCase);
+        public bool HighlightIfcName { get; set; }
+        public bool HighlightIfcTypeName { get; set; }
+        public bool HighlightIfcEntity { get; set; }
+        public bool HighlightIfcPredefinedType { get; set; }
+        public bool HighlightAdsClassification { get; set; }
+        public bool HighlightSystemName { get; set; }
+        public bool HighlightZoneName { get; set; }
+        public bool HighlightActualValue => IsFailed;
+    }
+
+    public class ComplianceRunSummary
+    {
+        public IList<ComplianceCheckResult> Rows { get; set; } = new List<ComplianceCheckResult>();
+        public int TotalElementsChecked { get; set; }
+        public int CompliantElementsCount { get; set; }
+        public int NonCompliantElementsCount { get; set; }
+        public int TotalApplicableChecks { get; set; }
+        public int PassedApplicableChecks { get; set; }
+        public int FailedApplicableChecks { get; set; }
+        public double ElementCompliancePercent { get; set; }
+        public double RuleCompliancePercent { get; set; }
+        public string MetricDefinition { get; set; }
+        public IList<string> RuleGroups { get; set; } = new List<string>();
+    }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
 using DfEIfcNamer.Models;
 
 namespace DfEIfcNamer.Services
@@ -20,6 +21,7 @@ namespace DfEIfcNamer.Services
         private readonly AuthoringParameterSetupService _setupService;
         private readonly ClassificationSyncService _classificationSync;
         private readonly IfcDefaultsResolverService _ifcDefaults;
+        private readonly DfeComplianceValidationService _compliance;
 
         public IfcAuthoringService(
             CobieSyncService cobieSync,
@@ -33,7 +35,8 @@ namespace DfEIfcNamer.Services
             DiagnosticsCollectorService diagnostics,
             AuthoringParameterSetupService setupService,
             ClassificationSyncService classificationSync,
-            IfcDefaultsResolverService ifcDefaults)
+            IfcDefaultsResolverService ifcDefaults,
+            DfeComplianceValidationService compliance)
         {
             _cobieSync = cobieSync;
             _templateConfig = templateConfig;
@@ -47,6 +50,7 @@ namespace DfEIfcNamer.Services
             _setupService = setupService;
             _classificationSync = classificationSync;
             _ifcDefaults = ifcDefaults;
+            _compliance = compliance;
 
             _codeRegistry.SetEntries(_templateConfig.LoadEmbeddedNamingCodes());
             _systemRegistry.SetEntries(_templateConfig.LoadEmbeddedSystems());
@@ -168,5 +172,8 @@ namespace DfEIfcNamer.Services
                 .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
+
+        public ComplianceRunSummary BuildComplianceReport(Document doc, IList<long> categoryIds) => _compliance.BuildComplianceSummary(doc, categoryIds);
+        public ApplyResult OpenComplianceReview3d(UIApplication app, IEnumerable<long> elementIds) => _compliance.OpenCompliance3dView(app, elementIds);
     }
 }
