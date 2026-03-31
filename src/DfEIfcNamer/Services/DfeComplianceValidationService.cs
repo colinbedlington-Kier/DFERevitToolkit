@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -174,46 +175,58 @@ namespace DfEIfcNamer.Services
             var uidoc = app?.ActiveUIDocument;
             var doc = uidoc?.Document;
             var ids = (elementIds ?? Enumerable.Empty<long>()).Distinct().Where(x => x > 0).Select(x => new ElementId(x)).ToList();
-            if (doc == null || ids.Count == 0)
+            var validIds = ids.Where(id => doc?.GetElement(id) != null).ToList();
+            Debug.WriteLine($"[DfEIfcNamer] Compliance 3D: requested={ids.Count}, valid={validIds.Count}");
+            if (doc == null || validIds.Count == 0)
             {
-                result.Logs.Add("No elements selected for 3D compliance review.");
+                result.Logs.Add("No valid selected non-compliant elements in current filter.");
                 return result;
             }
 
-            using (var tx = new Transaction(doc, "DfE Compliance Review 3D View"))
+            try
             {
-                tx.Start();
-                var view = new FilteredElementCollector(doc)
-                    .OfClass(typeof(View3D))
-                    .Cast<View3D>()
-                    .FirstOrDefault(v => !v.IsTemplate && string.Equals(v.Name, "DfE_Compliance_Review", StringComparison.OrdinalIgnoreCase));
-
-                if (view == null)
+                using (var tx = new Transaction(doc, "DfE Compliance Review 3D View"))
                 {
-                    var vft = new FilteredElementCollector(doc)
-                        .OfClass(typeof(ViewFamilyType))
-                        .Cast<ViewFamilyType>()
-                        .FirstOrDefault(x => x.ViewFamily == ViewFamily.ThreeDimensional);
-                    if (vft == null)
+                    tx.Start();
+                    var view = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View3D))
+                        .Cast<View3D>()
+                        .FirstOrDefault(v => !v.IsTemplate && string.Equals(v.Name, "DfE_Compliance_Review", StringComparison.OrdinalIgnoreCase));
+
+                    if (view == null)
                     {
-                        result.Logs.Add("No 3D view family type found.");
-                        tx.RollBack();
-                        return result;
+                        var vft = new FilteredElementCollector(doc)
+                            .OfClass(typeof(ViewFamilyType))
+                            .Cast<ViewFamilyType>()
+                            .FirstOrDefault(x => x.ViewFamily == ViewFamily.ThreeDimensional);
+                        if (vft == null)
+                        {
+                            result.Logs.Add("No 3D view family type found.");
+                            tx.RollBack();
+                            return result;
+                        }
+
+                        view = View3D.CreateIsometric(doc, vft.Id);
+                        view.Name = "DfE_Compliance_Review";
                     }
 
-                    view = View3D.CreateIsometric(doc, vft.Id);
-                    view.Name = "DfE_Compliance_Review";
+                    view.IsolateElementsTemporary(validIds);
+                    tx.Commit();
+                    Debug.WriteLine($"[DfEIfcNamer] Compliance 3D: isolated {validIds.Count} ids.");
+
+                    uidoc.RequestViewChange(view);
+                    uidoc.Selection.SetElementIds(validIds);
                 }
-
-                view.IsolateElementsTemporary(ids);
-                tx.Commit();
-
-                uidoc.ActiveView = view;
-                uidoc.Selection.SetElementIds(ids);
+            }
+            catch (Exception ex)
+            {
+                result.Failed++;
+                result.Logs.Add("Unable to open compliance 3D view safely: " + ex.Message);
+                return result;
             }
 
-            result.Updated = ids.Count;
-            result.Logs.Add($"Isolated {ids.Count} non-compliant element(s) in DfE_Compliance_Review.");
+            result.Updated = validIds.Count;
+            result.Logs.Add($"Isolated {validIds.Count} non-compliant element(s) in DfE_Compliance_Review.");
             return result;
         }
 

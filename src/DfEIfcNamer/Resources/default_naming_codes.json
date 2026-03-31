@@ -4,6 +4,7 @@
   { "IfcClass": "Window", "PredefinedType": "Window", "Code": "WIN" },
   { "IfcClass": "AirTerminal", "PredefinedType": "SupplyAir", "Code": "ATSUP" },
   { "IfcClass": "Furniture", "PredefinedType": "Undefined", "Code": "FURGEN" },
+  { "IfcClass": "ElectricAppliance", "PredefinedType": "", "Code": "EAP" },
   { "IfcClass": "PipeSegment", "PredefinedType": "", "Code": "PIP" },
   { "IfcClass": "FlowTerminal", "PredefinedType": "", "Code": "FLT" },
   { "IfcClass": "BuildingElementProxy", "PredefinedType": "", "Code": "BEP" }

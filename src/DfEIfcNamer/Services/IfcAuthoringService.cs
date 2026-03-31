@@ -141,8 +141,14 @@ namespace DfEIfcNamer.Services
 
         public ApplyResult ApplyZone(Document doc, IEnumerable<SpaceZonePreviewRow> rows)
         {
-            _diagnostics.AddInfo("Authoring.SpaceZone", "Applying ZoneName/ZoneDescription/ZoneCategory and ADS values.");
+            _diagnostics.AddInfo("Authoring.SpaceZone", "Applying ZoneName/ZoneDescription/ZoneCategory values only.");
             return _spaceZone.ApplyZone(doc, rows);
+        }
+
+        public ApplyResult ApplyAds(Document doc, IEnumerable<SpaceZonePreviewRow> rows)
+        {
+            _diagnostics.AddInfo("Authoring.SpaceZone", "Applying ADS classification/code values only.");
+            return _spaceZone.ApplyAds(doc, rows);
         }
 
         public SyncResult SyncCobie(Document doc)

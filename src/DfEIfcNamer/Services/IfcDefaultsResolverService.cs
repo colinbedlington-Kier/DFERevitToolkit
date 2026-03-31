@@ -8,6 +8,7 @@ namespace DfEIfcNamer.Services
     public class IfcDefaultsResolverService
     {
         private const string PredefinedTypesFileName = "DfeIfc2x3PredefinedTypes.json";
+        private const string ExtendedPredefinedTypesFileName = "ifc2x3_entity_predefinedtypes.json";
         private readonly ResourceFileLoader _resourceLoader = new ResourceFileLoader();
         private readonly Dictionary<string, List<string>> _predefinedByEntity = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -85,6 +86,44 @@ namespace DfEIfcNamer.Services
                     list.Add(record.Value.ToUpperInvariant());
                 }
             }
+
+            LoadExtendedPredefinedTypes();
+        }
+
+        private void LoadExtendedPredefinedTypes()
+        {
+            try
+            {
+                var extended = _resourceLoader.LoadJsonResourceOrFile<List<IfcEntityPredefinedRecord>>(ExtendedPredefinedTypesFileName, null, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                    ?? new List<IfcEntityPredefinedRecord>();
+                foreach (var record in extended.Where(x => !string.IsNullOrWhiteSpace(x.IFCClassToken)))
+                {
+                    var key = NormalizeEntity(record.IFCClassToken);
+                    if (!_predefinedByEntity.TryGetValue(key, out var list))
+                    {
+                        list = new List<string>();
+                        _predefinedByEntity[key] = list;
+                    }
+
+                    foreach (var value in record.PredefinedTypes ?? Enumerable.Empty<string>())
+                    {
+                        var normalized = value?.Trim().ToUpperInvariant();
+                        if (string.IsNullOrWhiteSpace(normalized))
+                        {
+                            continue;
+                        }
+
+                        if (!list.Any(x => string.Equals(x, normalized, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            list.Add(normalized);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Keep backward-compatible behavior when extended catalog is unavailable.
+            }
         }
 
         private static string NormalizeEntity(string entity)
@@ -111,6 +150,9 @@ namespace DfEIfcNamer.Services
             if (hint.Contains("window")) return "Window";
             if (hint.Contains("beam") || hint.Contains("structural framing")) return "Beam";
             if (hint.Contains("furniture")) return "Furniture";
+            if (hint.Contains("electrical appliance")) return "ElectricAppliance";
+            if (hint.Contains("electric appliance")) return "ElectricAppliance";
+            if (hint.Contains("electrical equipment")) return "ElectricAppliance";
             return string.Empty;
         }
 
@@ -140,6 +182,12 @@ namespace DfEIfcNamer.Services
         {
             public string Entity { get; set; }
             public string Value { get; set; }
+        }
+
+        private class IfcEntityPredefinedRecord
+        {
+            public string IFCClassToken { get; set; }
+            public IList<string> PredefinedTypes { get; set; }
         }
     }
 }
