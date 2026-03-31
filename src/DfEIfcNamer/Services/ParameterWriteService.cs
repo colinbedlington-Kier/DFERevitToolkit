@@ -327,7 +327,7 @@ namespace DfEIfcNamer.Services
                 case StorageType.ElementId:
                     if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idValue))
                     {
-                        return parameter.Set(new ElementId(idValue));
+                        return parameter.Set(new ElementId((long)idValue));
                     }
 
                     reason = "expected element id integer, got='" + value + "'";
