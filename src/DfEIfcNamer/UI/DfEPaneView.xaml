@@ -4,6 +4,7 @@
         Title="DfE IFC Authoring Tool" Height="760" Width="1220" WindowStartupLocation="CenterOwner"
         FontFamily="Poppins, Arial" FontSize="12" Background="#FFFFFF">
     <Window.Resources>
+        <SolidColorBrush x:Key="FailBackgroundBrush" Color="#FFF4CCCC"/>
         <Style TargetType="TabItem">
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Background" Value="#E8EEF1"/>
@@ -14,6 +15,38 @@
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="Margin" Value="0,0,8,8"/>
             <Setter Property="Padding" Value="10,4"/>
+        </Style>
+        <Style x:Key="ComplianceCellBorderStyle" TargetType="Border">
+            <Setter Property="Padding" Value="2,0,2,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style x:Key="ComplianceIfcNameBorderStyle" TargetType="Border" BasedOn="{StaticResource ComplianceCellBorderStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HighlightIfcName}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource FailBackgroundBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ComplianceIfcTypeNameBorderStyle" TargetType="Border" BasedOn="{StaticResource ComplianceCellBorderStyle}">
+            <Style.Triggers><DataTrigger Binding="{Binding HighlightIfcTypeName}" Value="True"><Setter Property="Background" Value="{StaticResource FailBackgroundBrush}"/></DataTrigger></Style.Triggers>
+        </Style>
+        <Style x:Key="ComplianceIfcEntityBorderStyle" TargetType="Border" BasedOn="{StaticResource ComplianceCellBorderStyle}">
+            <Style.Triggers><DataTrigger Binding="{Binding HighlightIfcEntity}" Value="True"><Setter Property="Background" Value="{StaticResource FailBackgroundBrush}"/></DataTrigger></Style.Triggers>
+        </Style>
+        <Style x:Key="ComplianceIfcPredefinedBorderStyle" TargetType="Border" BasedOn="{StaticResource ComplianceCellBorderStyle}">
+            <Style.Triggers><DataTrigger Binding="{Binding HighlightIfcPredefinedType}" Value="True"><Setter Property="Background" Value="{StaticResource FailBackgroundBrush}"/></DataTrigger></Style.Triggers>
+        </Style>
+        <Style x:Key="ComplianceAdsBorderStyle" TargetType="Border" BasedOn="{StaticResource ComplianceCellBorderStyle}">
+            <Style.Triggers><DataTrigger Binding="{Binding HighlightAdsClassification}" Value="True"><Setter Property="Background" Value="{StaticResource FailBackgroundBrush}"/></DataTrigger></Style.Triggers>
+        </Style>
+        <Style x:Key="ComplianceSystemBorderStyle" TargetType="Border" BasedOn="{StaticResource ComplianceCellBorderStyle}">
+            <Style.Triggers><DataTrigger Binding="{Binding HighlightSystemName}" Value="True"><Setter Property="Background" Value="{StaticResource FailBackgroundBrush}"/></DataTrigger></Style.Triggers>
+        </Style>
+        <Style x:Key="ComplianceZoneBorderStyle" TargetType="Border" BasedOn="{StaticResource ComplianceCellBorderStyle}">
+            <Style.Triggers><DataTrigger Binding="{Binding HighlightZoneName}" Value="True"><Setter Property="Background" Value="{StaticResource FailBackgroundBrush}"/></DataTrigger></Style.Triggers>
+        </Style>
+        <Style x:Key="ComplianceActualValueBorderStyle" TargetType="Border" BasedOn="{StaticResource ComplianceCellBorderStyle}">
+            <Style.Triggers><DataTrigger Binding="{Binding HighlightActualValue}" Value="True"><Setter Property="Background" Value="{StaticResource FailBackgroundBrush}"/></DataTrigger></Style.Triggers>
         </Style>
     </Window.Resources>
     <DockPanel Margin="10">
@@ -288,6 +321,135 @@
                         <TextBlock Text="{Binding Validation.Status}" FontWeight="Bold" Margin="0,0,0,8"/>
                         <ListBox ItemsSource="{Binding Validation.Messages}"/>
                     </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="DfE Compliance Validation">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <GroupBox Header="Summary">
+                        <UniformGrid Columns="4" Margin="8">
+                            <TextBlock Text="Total elements checked:" FontWeight="Bold"/><TextBlock Text="{Binding ComplianceValidation.TotalElementsChecked}"/>
+                            <TextBlock Text="Compliant elements:" FontWeight="Bold"/><TextBlock Text="{Binding ComplianceValidation.CompliantElementsCount}"/>
+                            <TextBlock Text="Non-compliant elements:" FontWeight="Bold"/><TextBlock Text="{Binding ComplianceValidation.NonCompliantElementsCount}"/>
+                            <TextBlock Text="Total failed checks:" FontWeight="Bold"/><TextBlock Text="{Binding ComplianceValidation.TotalFailedChecks}"/>
+                            <TextBlock Text="Element Compliance %:" FontWeight="Bold"/><TextBlock Text="{Binding ComplianceValidation.ElementCompliancePercent}"/>
+                            <TextBlock Text="Rule Compliance %:" FontWeight="Bold"/><TextBlock Text="{Binding ComplianceValidation.RuleCompliancePercent}"/>
+                            <TextBlock Text="Metric definition:" FontWeight="Bold"/><TextBlock Grid.ColumnSpan="3" Text="{Binding ComplianceValidation.MetricDefinition}" TextWrapping="Wrap"/>
+                        </UniformGrid>
+                    </GroupBox>
+
+                    <WrapPanel Grid.Row="1" Margin="0,8,0,8">
+                        <TextBlock Text="Category" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox Width="150" ItemsSource="{Binding ComplianceValidation.Categories}" SelectedItem="{Binding ComplianceValidation.SelectedCategory}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Family" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox Width="150" ItemsSource="{Binding ComplianceValidation.Families}" SelectedItem="{Binding ComplianceValidation.SelectedFamily}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Type" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox Width="150" ItemsSource="{Binding ComplianceValidation.Types}" SelectedItem="{Binding ComplianceValidation.SelectedType}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Rule Group" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox Width="150" ItemsSource="{Binding ComplianceValidation.RuleGroups}" SelectedItem="{Binding ComplianceValidation.SelectedRuleGroup}" Margin="0,0,8,8"/>
+                        <TextBlock Text="Show" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox Width="160" ItemsSource="{Binding ComplianceValidation.StatusModes}" SelectedItem="{Binding ComplianceValidation.SelectedStatusMode}" Margin="0,0,8,8"/>
+                        <Button Content="Refresh / Revalidate" Command="{Binding ComplianceValidation.RunValidationCommand}"/>
+                        <Button Content="View in 3D Model" Command="{Binding ComplianceValidation.ViewIn3DCommand}"/>
+                        <Button Content="Select All" Command="{Binding ComplianceValidation.SelectAllCommand}"/>
+                        <Button Content="Unselect All" Command="{Binding ComplianceValidation.UnselectAllCommand}"/>
+                    </WrapPanel>
+
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding ComplianceValidation.FilteredRows}" AutoGenerateColumns="False" CanUserSortColumns="True" SelectionMode="Extended" SelectionUnit="FullRow">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Select" Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                            <DataGridTextColumn Header="Element Id" Binding="{Binding ElementId}" Width="90"/>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110"/>
+                            <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="120"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="120"/>
+                            <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="90"/>
+                            <DataGridTemplateColumn Header="Current IFC Name" Width="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ComplianceIfcNameBorderStyle}">
+                                            <TextBlock Text="{Binding CurrentIfcName}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Current IFC Name [Type]" Width="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ComplianceIfcTypeNameBorderStyle}">
+                                            <TextBlock Text="{Binding CurrentIfcTypeName}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Current IFC Entity" Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ComplianceIfcEntityBorderStyle}">
+                                            <TextBlock Text="{Binding CurrentIfcEntity}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Current IFC Predefined Type" Width="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ComplianceIfcPredefinedBorderStyle}">
+                                            <TextBlock Text="{Binding CurrentIfcPredefinedType}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Current ADS Classification" Width="160">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ComplianceAdsBorderStyle}">
+                                            <TextBlock Text="{Binding CurrentAdsClassification}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Current System Name" Width="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ComplianceSystemBorderStyle}">
+                                            <TextBlock Text="{Binding CurrentSystemName}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Current Zone Name" Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ComplianceZoneBorderStyle}">
+                                            <TextBlock Text="{Binding CurrentZoneName}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Rule Group" Binding="{Binding RuleGroup}" Width="110"/>
+                            <DataGridTextColumn Header="Rule / Check Name" Binding="{Binding RuleName}" Width="160"/>
+                            <DataGridTextColumn Header="Expected Value / Requirement" Binding="{Binding ExpectedRequirement}" Width="200"/>
+                            <DataGridTemplateColumn Header="Actual Value" Width="160">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ComplianceActualValueBorderStyle}">
+                                            <TextBlock Text="{Binding ActualValue}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="80"/>
+                            <DataGridTextColumn Header="Notes / Failure Reason" Binding="{Binding Notes}" Width="220"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Grid.Row="3" Text="{Binding ComplianceValidation.Status}" FontWeight="Bold" Margin="0,8,0,0"/>
                 </Grid>
             </TabItem>
 

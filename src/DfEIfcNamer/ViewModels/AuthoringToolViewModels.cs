@@ -3,8 +3,10 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.ComponentModel;
 using System.Windows.Input;
 using System.Windows;
+using System.Windows.Data;
 using Autodesk.Revit.DB;
 using DfEIfcNamer.Commands;
 using DfEIfcNamer.ExternalEvents;
@@ -28,6 +30,7 @@ namespace DfEIfcNamer.ViewModels
             SpaceZone = new SpaceZoneViewModel(dispatcher);
             ClassificationSync = new ClassificationSyncViewModel(dispatcher);
             Validation = new ValidationViewModel(dispatcher, Setup, Naming, HeaderData, SpaceZone);
+            ComplianceValidation = new ComplianceValidationViewModel(dispatcher);
             ExitCommand = new RelayCommand(_ => RequestClose?.Invoke());
             DocumentStatus = "Document: n/a";
         }
@@ -40,6 +43,7 @@ namespace DfEIfcNamer.ViewModels
         public SpaceZoneViewModel SpaceZone { get; }
         public ClassificationSyncViewModel ClassificationSync { get; }
         public ValidationViewModel Validation { get; }
+        public ComplianceValidationViewModel ComplianceValidation { get; }
         public ICommand ExitCommand { get; }
 
         private string _documentStatus;
@@ -837,6 +841,168 @@ namespace DfEIfcNamer.ViewModels
                 ClassificationSyncRows = Rows.ToList(),
                 Callback = r => Status = $"Classification sync applied. Updated: {r.ApplyResult?.Updated ?? 0}, unique types: {r.ApplyResult?.UniqueTypesUpdated ?? 0}, instances: {r.ApplyResult?.InstancesUpdated ?? 0}"
             });
+        }
+    }
+
+    public class ComplianceValidationViewModel : ViewModelBase
+    {
+        private readonly RevitRequestDispatcher _dispatcher;
+        private readonly ICollectionView _rowsView;
+
+        public ComplianceValidationViewModel(RevitRequestDispatcher dispatcher)
+        {
+            _dispatcher = dispatcher;
+            Rows = new ObservableCollection<ComplianceCheckResult>();
+            Categories = new ObservableCollection<string> { "All" };
+            Families = new ObservableCollection<string> { "All" };
+            Types = new ObservableCollection<string> { "All" };
+            RuleGroups = new ObservableCollection<string> { "All" };
+            StatusModes = new ObservableCollection<string> { "All", "Non-compliant only", "Compliant only" };
+            SelectedStatusMode = StatusModes[0];
+            _rowsView = CollectionViewSource.GetDefaultView(Rows);
+            _rowsView.Filter = FilterRow;
+
+            RunValidationCommand = new RelayCommand(_ => RunValidation());
+            ViewIn3DCommand = new RelayCommand(_ => ViewIn3DModel());
+            SelectAllCommand = new RelayCommand(_ => SetSelection(true));
+            UnselectAllCommand = new RelayCommand(_ => SetSelection(false));
+        }
+
+        public ObservableCollection<ComplianceCheckResult> Rows { get; }
+        public ICollectionView FilteredRows => _rowsView;
+        public ObservableCollection<string> Categories { get; }
+        public ObservableCollection<string> Families { get; }
+        public ObservableCollection<string> Types { get; }
+        public ObservableCollection<string> RuleGroups { get; }
+        public ObservableCollection<string> StatusModes { get; }
+        public ICommand RunValidationCommand { get; }
+        public ICommand ViewIn3DCommand { get; }
+        public ICommand SelectAllCommand { get; }
+        public ICommand UnselectAllCommand { get; }
+
+        private string _selectedCategory = "All";
+        public string SelectedCategory { get => _selectedCategory; set { _selectedCategory = value; RaisePropertyChanged(); RefreshFilter(); } }
+        private string _selectedFamily = "All";
+        public string SelectedFamily { get => _selectedFamily; set { _selectedFamily = value; RaisePropertyChanged(); RefreshFilter(); } }
+        private string _selectedType = "All";
+        public string SelectedType { get => _selectedType; set { _selectedType = value; RaisePropertyChanged(); RefreshFilter(); } }
+        private string _selectedRuleGroup = "All";
+        public string SelectedRuleGroup { get => _selectedRuleGroup; set { _selectedRuleGroup = value; RaisePropertyChanged(); RefreshFilter(); } }
+        private string _selectedStatusMode;
+        public string SelectedStatusMode { get => _selectedStatusMode; set { _selectedStatusMode = value; RaisePropertyChanged(); RefreshFilter(); } }
+
+        private int _totalElementsChecked;
+        public int TotalElementsChecked { get => _totalElementsChecked; set { _totalElementsChecked = value; RaisePropertyChanged(); } }
+        private int _compliantElementsCount;
+        public int CompliantElementsCount { get => _compliantElementsCount; set { _compliantElementsCount = value; RaisePropertyChanged(); } }
+        private int _nonCompliantElementsCount;
+        public int NonCompliantElementsCount { get => _nonCompliantElementsCount; set { _nonCompliantElementsCount = value; RaisePropertyChanged(); } }
+        private int _totalFailedChecks;
+        public int TotalFailedChecks { get => _totalFailedChecks; set { _totalFailedChecks = value; RaisePropertyChanged(); } }
+        private string _elementCompliancePercent = "0%";
+        public string ElementCompliancePercent { get => _elementCompliancePercent; set { _elementCompliancePercent = value; RaisePropertyChanged(); } }
+        private string _ruleCompliancePercent = "0%";
+        public string RuleCompliancePercent { get => _ruleCompliancePercent; set { _ruleCompliancePercent = value; RaisePropertyChanged(); } }
+        private string _metricDefinition = string.Empty;
+        public string MetricDefinition { get => _metricDefinition; set { _metricDefinition = value; RaisePropertyChanged(); } }
+        private string _status = "Not run.";
+        public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
+
+        private bool FilterRow(object obj)
+        {
+            var row = obj as ComplianceCheckResult;
+            if (row == null) return false;
+            if (!Matches(SelectedCategory, row.Category)) return false;
+            if (!Matches(SelectedFamily, row.Family)) return false;
+            if (!Matches(SelectedType, row.Type)) return false;
+            if (!Matches(SelectedRuleGroup, row.RuleGroup)) return false;
+            if (SelectedStatusMode == "Non-compliant only" && !row.IsFailed) return false;
+            if (SelectedStatusMode == "Compliant only" && !row.IsCompliant) return false;
+            return true;
+        }
+
+        private static bool Matches(string selected, string current)
+        {
+            return string.IsNullOrWhiteSpace(selected) || selected == "All" || string.Equals(selected, current ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void RefreshFilter() => _rowsView?.Refresh();
+
+        private void SetSelection(bool value)
+        {
+            foreach (var row in _rowsView.Cast<ComplianceCheckResult>())
+            {
+                row.IsSelected = value;
+            }
+            _rowsView.Refresh();
+        }
+
+        private void RunValidation()
+        {
+            Status = "Running DfE compliance validation...";
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.RunComplianceValidation,
+                Callback = r =>
+                {
+                    var summary = r.ComplianceSummary ?? new ComplianceRunSummary();
+                    Rows.Clear();
+                    foreach (var row in summary.Rows) Rows.Add(row);
+                    RebuildFilters();
+                    TotalElementsChecked = summary.TotalElementsChecked;
+                    CompliantElementsCount = summary.CompliantElementsCount;
+                    NonCompliantElementsCount = summary.NonCompliantElementsCount;
+                    TotalFailedChecks = summary.FailedApplicableChecks;
+                    ElementCompliancePercent = summary.ElementCompliancePercent.ToString("0.0") + "%";
+                    RuleCompliancePercent = summary.RuleCompliancePercent.ToString("0.0") + "%";
+                    MetricDefinition = summary.MetricDefinition;
+                    Status = $"Validation complete. Checks: {summary.TotalApplicableChecks}, failed: {summary.FailedApplicableChecks}.";
+                }
+            });
+        }
+
+        private void ViewIn3DModel()
+        {
+            var selectedFailedElementIds = _rowsView.Cast<ComplianceCheckResult>()
+                .Where(x => x.IsSelected && x.IsFailed && x.ElementId > 0)
+                .Select(x => x.ElementId)
+                .Distinct()
+                .ToList();
+            if (!selectedFailedElementIds.Any())
+            {
+                Status = "No selected non-compliant elements in current filter.";
+                return;
+            }
+
+            _dispatcher.Raise(new RevitRequest
+            {
+                Id = RevitRequestId.OpenComplianceReview3d,
+                ElementIds = selectedFailedElementIds,
+                Callback = r =>
+                {
+                    Status = r.ApplyResult?.Logs?.FirstOrDefault() ?? $"Opened 3D review for {selectedFailedElementIds.Count} element(s).";
+                }
+            });
+        }
+
+        private void RebuildFilters()
+        {
+            ResetFilterCollection(Categories, Rows.Select(x => x.Category).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x));
+            ResetFilterCollection(Families, Rows.Select(x => x.Family).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x));
+            ResetFilterCollection(Types, Rows.Select(x => x.Type).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x));
+            ResetFilterCollection(RuleGroups, Rows.Select(x => x.RuleGroup).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x));
+            SelectedCategory = "All";
+            SelectedFamily = "All";
+            SelectedType = "All";
+            SelectedRuleGroup = "All";
+            RefreshFilter();
+        }
+
+        private static void ResetFilterCollection(ObservableCollection<string> collection, IEnumerable<string> values)
+        {
+            collection.Clear();
+            collection.Add("All");
+            foreach (var value in values) collection.Add(value);
         }
     }
 
