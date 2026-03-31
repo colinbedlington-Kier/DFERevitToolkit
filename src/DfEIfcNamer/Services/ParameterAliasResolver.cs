@@ -8,8 +8,6 @@ namespace DfEIfcNamer.Services
 {
     public class ParameterAliasResolver
     {
-        private static readonly string AliasMapSource = "in-code defaults";
-
         private static readonly Lazy<AliasMapState> AliasMapStateLazy = new Lazy<AliasMapState>(CreateAliasMapState, true);
 
         public ParameterMatch Resolve(Element element, string requestedName)
@@ -24,7 +22,7 @@ namespace DfEIfcNamer.Services
                     AttemptedNames = Array.Empty<string>(),
                     AliasMapLoaded = AliasMapStateLazy.Value.Loaded,
                     AliasCount = AliasMapStateLazy.Value.AliasCount,
-                    AliasSource = AliasMapSource
+                    AliasSource = AliasMapStateLazy.Value.Source
                 };
             }
 
@@ -46,7 +44,7 @@ namespace DfEIfcNamer.Services
                             AttemptedNames = candidates,
                             AliasMapLoaded = state.Loaded,
                             AliasCount = state.AliasCount,
-                            AliasSource = AliasMapSource
+                            AliasSource = state.Source
                         };
                     }
                 }
@@ -58,7 +56,8 @@ namespace DfEIfcNamer.Services
                     AttemptedNames = candidates,
                     AliasMapLoaded = state.Loaded,
                     AliasCount = state.AliasCount,
-                    AliasSource = AliasMapSource
+                    AliasSource = state.Source,
+                    InitializationError = state.InitializationException
                 };
             }
             catch (Exception ex)
@@ -68,7 +67,7 @@ namespace DfEIfcNamer.Services
                 Trace.WriteLine("[DfEIfcNamer] Message=" + ex.Message);
                 Trace.WriteLine("[DfEIfcNamer] Inner=" + (ex.InnerException?.GetType().FullName + ": " + ex.InnerException?.Message));
                 Trace.WriteLine("[DfEIfcNamer] Stack=" + ex.StackTrace);
-                Trace.WriteLine("[DfEIfcNamer] AliasMapSource=" + AliasMapSource);
+                Trace.WriteLine("[DfEIfcNamer] AliasMapSource=lazy resolver runtime");
 
                 return new ParameterMatch
                 {
@@ -77,7 +76,7 @@ namespace DfEIfcNamer.Services
                     AttemptedNames = new[] { key },
                     AliasMapLoaded = false,
                     AliasCount = 0,
-                    AliasSource = AliasMapSource,
+                    AliasSource = "lazy resolver runtime",
                     InitializationError = ex
                 };
             }
@@ -88,18 +87,20 @@ namespace DfEIfcNamer.Services
             try
             {
                 var map = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+                const string source = "in-code defaults";
 
                 AddAliasSet(map, "IfcName [Type]", "IfcName [Type]", "IfcName[Type]", "IFCName [Type]", "IFCName[Type]");
                 AddAliasSet(map, "IfcDescription [Type]", "IfcDescription [Type]", "IfcDescription[Type]", "IFCDescription [Type]", "IFCDescription[Type]");
 
                 var aliasCount = map.Values.Sum(x => x?.Length ?? 0);
-                Trace.WriteLine("[DfEIfcNamer] ParameterAliasResolver initialized. Source=" + AliasMapSource + "; Keys=" + map.Count + "; Aliases=" + aliasCount);
+                Trace.WriteLine("[DfEIfcNamer] ParameterAliasResolver initialized. Source=" + source + "; Keys=" + map.Count + "; Aliases=" + aliasCount);
 
                 return new AliasMapState
                 {
                     Map = map,
                     Loaded = true,
-                    AliasCount = aliasCount
+                    AliasCount = aliasCount,
+                    Source = source
                 };
             }
             catch (Exception ex)
@@ -109,13 +110,14 @@ namespace DfEIfcNamer.Services
                 Trace.WriteLine("[DfEIfcNamer] Message=" + ex.Message);
                 Trace.WriteLine("[DfEIfcNamer] Inner=" + (ex.InnerException?.GetType().FullName + ": " + ex.InnerException?.Message));
                 Trace.WriteLine("[DfEIfcNamer] Stack=" + ex.StackTrace);
-                Trace.WriteLine("[DfEIfcNamer] AliasMapSource=" + AliasMapSource);
+                Trace.WriteLine("[DfEIfcNamer] AliasMapSource=in-code defaults");
 
                 return new AliasMapState
                 {
                     Map = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase),
                     Loaded = false,
                     AliasCount = 0,
+                    Source = "in-code defaults (fallback-empty)",
                     InitializationException = ex
                 };
             }
@@ -155,6 +157,7 @@ namespace DfEIfcNamer.Services
             public IReadOnlyDictionary<string, string[]> Map { get; set; }
             public bool Loaded { get; set; }
             public int AliasCount { get; set; }
+            public string Source { get; set; }
             public Exception InitializationException { get; set; }
         }
     }

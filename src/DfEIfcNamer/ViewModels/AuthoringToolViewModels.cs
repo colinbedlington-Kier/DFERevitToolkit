@@ -256,6 +256,7 @@ namespace DfEIfcNamer.ViewModels
             ScopeModes = new ObservableCollection<string>(Enum.GetNames(typeof(NamingScopeMode)));
             NumberingModes = new ObservableCollection<string>(Enum.GetNames(typeof(InstanceNumberingMode)));
             Rows = new ObservableCollection<NamingPreviewRow>();
+            FilteredRows = new ObservableCollection<NamingPreviewRow>();
             Categories = new ObservableCollection<CategorySelectionItem>();
             Systems = new ObservableCollection<SystemRegistryEntry>();
             Warnings = new ObservableCollection<string>();
@@ -266,6 +267,10 @@ namespace DfEIfcNamer.ViewModels
             ApplyAllCommand = new RelayCommand(_ => Apply(RevitRequestId.ApplyNamingAll));
             ValidateCommand = new RelayCommand(_ => ValidateOnly());
             ExportReportCommand = new RelayCommand(_ => Export());
+            ApplyFiltersCommand = new RelayCommand(_ => ApplyFilters());
+            SelectAllRowsCommand = new RelayCommand(_ => SetSelection(true));
+            UnselectAllRowsCommand = new RelayCommand(_ => SetSelection(false));
+            FillDownPredefinedTypeCommand = new RelayCommand(_ => FillDownPredefinedType());
             ScopeMode = ScopeModes.First();
             NumberingMode = NumberingModes.First();
             FallbackCode = "UNM";
@@ -277,6 +282,7 @@ namespace DfEIfcNamer.ViewModels
         public ObservableCollection<string> ScopeModes { get; }
         public ObservableCollection<string> NumberingModes { get; }
         public ObservableCollection<NamingPreviewRow> Rows { get; }
+        public ObservableCollection<NamingPreviewRow> FilteredRows { get; }
         public ObservableCollection<CategorySelectionItem> Categories { get; }
         public ObservableCollection<SystemRegistryEntry> Systems { get; }
         public ObservableCollection<string> Warnings { get; }
@@ -287,6 +293,10 @@ namespace DfEIfcNamer.ViewModels
         public ICommand ApplyAllCommand { get; }
         public ICommand ValidateCommand { get; }
         public ICommand ExportReportCommand { get; }
+        public ICommand ApplyFiltersCommand { get; }
+        public ICommand SelectAllRowsCommand { get; }
+        public ICommand UnselectAllRowsCommand { get; }
+        public ICommand FillDownPredefinedTypeCommand { get; }
         public NamingPreviewResult LastPreview { get; private set; }
 
         public string ScopeMode { get; set; }
@@ -298,6 +308,13 @@ namespace DfEIfcNamer.ViewModels
         public bool AppendToExistingSystem { get; set; }
         public int TypeNumberWidth { get; set; }
         public bool AllowDoorWindowUnassignedFallback { get; set; }
+        public string FilterElementId { get; set; }
+        public string FilterCategory { get; set; }
+        public string FilterFamily { get; set; }
+        public string FilterType { get; set; }
+        public string FilterIfcEntity { get; set; }
+        public string FilterIfcPredefinedType { get; set; }
+        public string FillDownIfcPredefinedType { get; set; }
 
         private string _status = "No preview generated.";
         public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
@@ -394,9 +411,66 @@ namespace DfEIfcNamer.ViewModels
             LastPreview = preview;
             Rows.Clear();
             foreach (var row in preview?.Rows ?? Enumerable.Empty<NamingPreviewRow>()) Rows.Add(row);
+            ApplyFilters();
             Warnings.Clear();
             foreach (var warning in preview?.Warnings ?? Enumerable.Empty<string>()) Warnings.Add(warning);
             Status = $"Selected: {preview?.SelectedCount ?? 0}, Eligible: {preview?.EligibleCount ?? 0}, Skipped: {preview?.SkippedCount ?? 0}, Errors: {preview?.ErrorCount ?? 0}";
+        }
+
+        public void ApplyFilters()
+        {
+            FilteredRows.Clear();
+            foreach (var row in Rows.Where(MatchesNamingFilter))
+            {
+                FilteredRows.Add(row);
+            }
+        }
+
+        private bool MatchesNamingFilter(NamingPreviewRow row)
+        {
+            return Contains(row.ElementId.ToString(), FilterElementId)
+                   && Contains(row.Category, FilterCategory)
+                   && Contains(row.Family, FilterFamily)
+                   && Contains(row.Type, FilterType)
+                   && Contains(row.ProposedIfcEntity, FilterIfcEntity)
+                   && Contains(row.ProposedIfcPredefinedType, FilterIfcPredefinedType);
+        }
+
+        private void SetSelection(bool selected)
+        {
+            if (FilteredRows.Count == 0) ApplyFilters();
+            foreach (var row in FilteredRows)
+            {
+                row.IsSelected = selected;
+            }
+        }
+
+        private void FillDownPredefinedType()
+        {
+            var value = FillDownIfcPredefinedType;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                var seed = FilteredRows.FirstOrDefault(x => x.IsSelected);
+                value = seed?.ProposedIfcPredefinedType;
+            }
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                Status = "Fill-down skipped: no IFC predefined type selected.";
+                return;
+            }
+
+            foreach (var row in FilteredRows.Where(x => x.IsSelected))
+            {
+                row.ProposedIfcPredefinedType = value;
+            }
+            Status = $"Filled IFC Predefined Type '{value}' to {FilteredRows.Count(x => x.IsSelected)} selected rows.";
+        }
+
+        private static bool Contains(string source, string filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter)) return true;
+            return (source ?? string.Empty).IndexOf(filter.Trim(), StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 
@@ -512,22 +586,30 @@ namespace DfEIfcNamer.ViewModels
             _naming = naming;
             SuggestedSystems = new ObservableCollection<SystemCandidateOption>();
             AllAllowedSystems = new ObservableCollection<string>();
+            FilteredRows = new ObservableCollection<NamingPreviewRow>();
             AutoResolveCommand = new RelayCommand(_ => AutoResolve());
             ValidateCommand = new RelayCommand(_ => Validate());
             SelectAllCommand = new RelayCommand(_ => SelectAll());
+            UnselectAllCommand = new RelayCommand(_ => SetSelection(false));
+            ApplyFiltersCommand = new RelayCommand(_ => ApplyFilters());
             ApplyCommand = _naming.ApplySystemDataCommand;
             ExportCommand = _naming.ExportReportCommand;
             LoadAllAllowedSystems();
             LoadExistingSystemNames();
+            _naming.Rows.CollectionChanged += (s, e) => ApplyFilters();
+            ApplyFilters();
         }
 
         public ObservableCollection<NamingPreviewRow> Rows => _naming.Rows;
+        public ObservableCollection<NamingPreviewRow> FilteredRows { get; }
         public ObservableCollection<string> Warnings => _naming.Warnings;
         public ObservableCollection<SystemCandidateOption> SuggestedSystems { get; }
         public ObservableCollection<string> AllAllowedSystems { get; }
         public ICommand AutoResolveCommand { get; }
         public ICommand ValidateCommand { get; }
         public ICommand SelectAllCommand { get; }
+        public ICommand UnselectAllCommand { get; }
+        public ICommand ApplyFiltersCommand { get; }
         public ICommand ApplyCommand { get; }
         public ICommand ExportCommand { get; }
 
@@ -537,6 +619,11 @@ namespace DfEIfcNamer.ViewModels
         public string SelectedSuggestedSystem { get; set; }
         public string SelectedAllowedSystem { get; set; }
         public string RowFilterText { get; set; }
+        public string FilterCategory { get; set; }
+        public string FilterFamily { get; set; }
+        public string FilterType { get; set; }
+        public string FilterSsNumber { get; set; }
+        public string FilterResolvedSystem { get; set; }
 
         private string _status = "System assignment ready.";
         public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
@@ -563,9 +650,11 @@ namespace DfEIfcNamer.ViewModels
             var chosen = !string.IsNullOrWhiteSpace(SelectedSuggestedSystem) ? SelectedSuggestedSystem : SelectedAllowedSystem;
             foreach (var row in relevantRows)
             {
-                if (!string.IsNullOrWhiteSpace(chosen))
+                var rowBest = _catalogService.ResolveCandidatesByClassification(row.SourceSsNumber).FirstOrDefault()?.SystemName;
+                var preferred = !string.IsNullOrWhiteSpace(chosen) ? chosen : rowBest;
+                if (!string.IsNullOrWhiteSpace(preferred))
                 {
-                    row.ProposedSystemName = AddAsNextSystem ? NextSystemName(chosen) : chosen;
+                    row.ProposedSystemName = AddAsNextSystem ? NextSystemName(preferred) : preferred;
                     row.IsUserDefinedSystem = false;
                 }
                 else if (string.IsNullOrWhiteSpace(row.CandidateSystems))
@@ -576,6 +665,7 @@ namespace DfEIfcNamer.ViewModels
 
             var unresolved = relevantRows.Count(r => string.IsNullOrWhiteSpace(r.CandidateSystems));
             Status = $"Rows selected: {relevantRows.Count}, rows with Ss number: {withSs.Count}, candidate systems found: {SuggestedSystems.Count}, unmatched rows: {unresolved}.";
+            ApplyFilters();
         }
 
         private void Validate()
@@ -638,17 +728,44 @@ namespace DfEIfcNamer.ViewModels
 
         private void SelectAll()
         {
-            var filter = RowFilterText?.Trim();
-            foreach (var row in Rows)
+            SetSelection(true);
+        }
+
+        private void SetSelection(bool value)
+        {
+            if (FilteredRows.Count == 0) ApplyFilters();
+            foreach (var row in FilteredRows)
             {
-                if (string.IsNullOrWhiteSpace(filter) ||
-                    (row.Category?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0) ||
-                    (row.SourceSsNumber?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0) ||
-                    (row.ProposedSystemName?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0))
-                {
-                    row.IsSelected = true;
-                }
+                row.IsSelected = value;
             }
+        }
+
+        public void ApplyFilters()
+        {
+            FilteredRows.Clear();
+            foreach (var row in Rows.Where(MatchesFilter))
+            {
+                FilteredRows.Add(row);
+            }
+        }
+
+        private bool MatchesFilter(NamingPreviewRow row)
+        {
+            return Contains(row.Category, FilterCategory)
+                   && Contains(row.Family, FilterFamily)
+                   && Contains(row.Type, FilterType)
+                   && Contains(row.SourceSsNumber, FilterSsNumber)
+                   && Contains(row.ProposedSystemName, FilterResolvedSystem)
+                   && (string.IsNullOrWhiteSpace(RowFilterText)
+                       || Contains(row.Category, RowFilterText)
+                       || Contains(row.SourceSsNumber, RowFilterText)
+                       || Contains(row.ProposedSystemName, RowFilterText));
+        }
+
+        private static bool Contains(string source, string filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter)) return true;
+            return (source ?? string.Empty).IndexOf(filter.Trim(), StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 
@@ -659,6 +776,7 @@ namespace DfEIfcNamer.ViewModels
         {
             _dispatcher = dispatcher;
             Rows = new ObservableCollection<SpaceZonePreviewRow>();
+            FilteredRows = new ObservableCollection<SpaceZonePreviewRow>();
             Zones = new ObservableCollection<ZoneCatalogEntry>();
             AdsClassifications = new ObservableCollection<AdsClassificationEntry>();
             LoadSelectionCommand = new RelayCommand(_ => Resolve());
@@ -669,9 +787,11 @@ namespace DfEIfcNamer.ViewModels
             ApplyZoneNameCommand = new RelayCommand(_ => ApplyZone());
             ValidateAssignmentCommand = new RelayCommand(_ => Validate());
             ExportReportCommand = new RelayCommand(_ => Export());
+            ApplyFiltersCommand = new RelayCommand(_ => ApplyFilters());
         }
 
         public ObservableCollection<SpaceZonePreviewRow> Rows { get; }
+        public ObservableCollection<SpaceZonePreviewRow> FilteredRows { get; }
         public ObservableCollection<ZoneCatalogEntry> Zones { get; }
         public ObservableCollection<AdsClassificationEntry> AdsClassifications { get; }
         public SpaceZonePreviewResult LastPreview { get; private set; }
@@ -683,8 +803,14 @@ namespace DfEIfcNamer.ViewModels
         public ICommand ApplyZoneNameCommand { get; }
         public ICommand ValidateAssignmentCommand { get; }
         public ICommand ExportReportCommand { get; }
+        public ICommand ApplyFiltersCommand { get; }
         public string ProposedZoneName { get; set; }
         public string ProposedAdsClassification { get; set; }
+        public string FilterCategory { get; set; }
+        public string FilterFamily { get; set; }
+        public string FilterType { get; set; }
+        public string FilterRoom { get; set; }
+        public string FilterZone { get; set; }
 
         private string _status = "No selection loaded.";
         public string Status { get => _status; set { _status = value; RaisePropertyChanged(); } }
@@ -696,11 +822,12 @@ namespace DfEIfcNamer.ViewModels
                 LastPreview = r.SpaceZonePreview;
                 Rows.Clear();
                 foreach (var row in r.SpaceZonePreview?.Rows ?? Enumerable.Empty<SpaceZonePreviewRow>()) Rows.Add(row);
+                ApplyFilters();
                 Zones.Clear();
                 foreach (var zone in r.Zones ?? Enumerable.Empty<ZoneCatalogEntry>()) Zones.Add(zone);
                 AdsClassifications.Clear();
                 foreach (var ads in r.AdsClassifications ?? Enumerable.Empty<AdsClassificationEntry>()) AdsClassifications.Add(ads);
-                Status = $"Loaded {Rows.Count} valid Room/Space rows, selected: {Rows.Count(x => x.IsSelected)}, skipped non-room/space: {r.SpaceZonePreview?.SkippedNonRoomSpaceCount ?? 0}, missing refs: {r.SpaceZonePreview?.MissingRoomCount ?? 0}";
+                Status = $"Loaded {Rows.Count} valid Room/Space rows, selected: {Rows.Count(x => x.IsSelected)}, skipped non-room/space: {r.SpaceZonePreview?.SkippedNonRoomSpaceCount ?? 0}, missing refs: {r.SpaceZonePreview?.MissingRoomCount ?? 0}, zones loaded: {Zones.Count}, ADS loaded: {AdsClassifications.Count}";
             }});
         }
 
@@ -713,6 +840,30 @@ namespace DfEIfcNamer.ViewModels
 
             var selectedCount = Rows.Count(x => x.IsSelected);
             Status = $"Rows selected: {selectedCount}/{Rows.Count}.";
+        }
+
+        public void ApplyFilters()
+        {
+            FilteredRows.Clear();
+            foreach (var row in Rows.Where(MatchesFilter))
+            {
+                FilteredRows.Add(row);
+            }
+        }
+
+        private bool MatchesFilter(SpaceZonePreviewRow row)
+        {
+            return Contains(row.Category, FilterCategory)
+                   && Contains(row.Family, FilterFamily)
+                   && Contains(row.Type, FilterType)
+                   && Contains(row.RoomNumber, FilterRoom)
+                   && Contains(row.ProposedZoneName, FilterZone);
+        }
+
+        private static bool Contains(string source, string filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter)) return true;
+            return (source ?? string.Empty).IndexOf(filter.Trim(), StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void ApplySpace()

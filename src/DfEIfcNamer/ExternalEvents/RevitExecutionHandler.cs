@@ -49,14 +49,14 @@ namespace DfEIfcNamer.ExternalEvents
                     case RevitRequestId.CheckAuthoringSetup:
                         response.AuthoringSetup = _authoringService.CheckSetup(doc, _request.CategoryIds);
                         response.Systems = _authoringService.GetSystems();
-                        response.Zones = _authoringService.GetZones();
-                        response.AdsClassifications = _authoringService.GetAdsClassifications();
+                        response.Zones = _authoringService.GetZones(doc);
+                        response.AdsClassifications = _authoringService.GetAdsClassifications(doc);
                         break;
                     case RevitRequestId.CreateAuthoringParameters:
                         response.AuthoringSetup = _authoringService.CreateMissingParameters(doc, _request.CategoryIds);
                         response.Systems = _authoringService.GetSystems();
-                        response.Zones = _authoringService.GetZones();
-                        response.AdsClassifications = _authoringService.GetAdsClassifications();
+                        response.Zones = _authoringService.GetZones(doc);
+                        response.AdsClassifications = _authoringService.GetAdsClassifications(doc);
                         break;
                     case RevitRequestId.LoadNamingCodeMap:
                         response.NamingCodes = _authoringService.LoadNamingCodes(_request.ExternalPath);
@@ -77,7 +77,7 @@ namespace DfEIfcNamer.ExternalEvents
                         response.ApplyResult = _authoringService.ApplyNaming(doc, _request.NamingRows, false, false, true);
                         break;
                     case RevitRequestId.ApplyNamingAll:
-                        response.ApplyResult = _authoringService.ApplyNaming(doc, _request.NamingRows, true, true, true);
+                        response.ApplyResult = _authoringService.ApplyNaming(doc, _request.NamingRows, true, true, false);
                         break;
                     case RevitRequestId.ReadHeaderData:
                         response.HeaderData = _authoringService.ReadHeader(doc);
@@ -91,8 +91,8 @@ namespace DfEIfcNamer.ExternalEvents
                         break;
                     case RevitRequestId.ResolveSpaceZone:
                         response.SpaceZonePreview = _authoringService.BuildSpaceZonePreview(doc, _request.SpaceZoneRequest ?? new SpaceZoneRequest());
-                        response.Zones = _authoringService.GetZones();
-                        response.AdsClassifications = _authoringService.GetAdsClassifications();
+                        response.Zones = _authoringService.GetZones(doc);
+                        response.AdsClassifications = _authoringService.GetAdsClassifications(doc);
                         break;
                     case RevitRequestId.ApplySpaceReference:
                         response.ApplyResult = _authoringService.ApplySpaceReference(doc, _request.SpaceZoneRows);

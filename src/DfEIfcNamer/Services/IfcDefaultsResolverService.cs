@@ -32,6 +32,27 @@ namespace DfEIfcNamer.Services
             return (entity, predefined, string.Empty, !string.IsNullOrWhiteSpace(predefined));
         }
 
+        public IList<string> GetAllowedPredefinedTypes(string entity)
+        {
+            var normalized = NormalizeEntity(entity);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return new List<string> { "USERDEFINED" };
+            }
+
+            if (!_predefinedByEntity.TryGetValue(normalized, out var list) || list.Count == 0)
+            {
+                return new List<string> { "USERDEFINED" };
+            }
+
+            return list
+                .Select(x => x?.Trim().ToUpperInvariant())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         private void LoadPredefinedTypes()
         {
             var explicitPath = _resourceLoader.ResolveExternalResourcePath(PredefinedTypesFileName);
@@ -52,10 +73,11 @@ namespace DfEIfcNamer.Services
 
             foreach (var record in records.Where(r => !string.IsNullOrWhiteSpace(r.Entity) && !string.IsNullOrWhiteSpace(r.Value)))
             {
-                if (!_predefinedByEntity.TryGetValue(record.Entity, out var list))
+                var key = NormalizeEntity(record.Entity);
+                if (!_predefinedByEntity.TryGetValue(key, out var list))
                 {
                     list = new List<string>();
-                    _predefinedByEntity[record.Entity] = list;
+                    _predefinedByEntity[key] = list;
                 }
 
                 if (!list.Any(x => string.Equals(x, record.Value, StringComparison.OrdinalIgnoreCase)))
@@ -63,6 +85,22 @@ namespace DfEIfcNamer.Services
                     list.Add(record.Value.ToUpperInvariant());
                 }
             }
+        }
+
+        private static string NormalizeEntity(string entity)
+        {
+            if (string.IsNullOrWhiteSpace(entity))
+            {
+                return string.Empty;
+            }
+
+            var value = entity.Trim();
+            if (value.StartsWith("Ifc", StringComparison.OrdinalIgnoreCase))
+            {
+                value = value.Substring(3);
+            }
+
+            return value;
         }
 
         private string ResolveEntity(string category, string family, string type)
