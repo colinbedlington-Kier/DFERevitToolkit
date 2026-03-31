@@ -42,7 +42,9 @@ namespace DfEIfcNamer.ExternalEvents
         GenerateClassificationSyncPreview,
         ApplyClassificationSync
         ,
-        GetExistingSystemNames
+        GetExistingSystemNames,
+        RunComplianceValidation,
+        OpenComplianceReview3d
     }
 
     public class RevitRequest
@@ -63,6 +65,7 @@ namespace DfEIfcNamer.ExternalEvents
         public SpaceZonePreviewResult SpaceZoneSnapshot { get; set; }
         public Action<RevitResponse> Callback { get; set; }
         public IList<ClassificationSyncPreviewRow> ClassificationSyncRows { get; set; }
+        public IList<long> ElementIds { get; set; }
     }
 
     public class RevitResponse
@@ -88,5 +91,6 @@ namespace DfEIfcNamer.ExternalEvents
         public ClassificationSyncResult ClassificationSyncResult { get; set; }
         public string Error { get; set; }
         public IList<string> ExistingSystemNames { get; set; }
+        public ComplianceRunSummary ComplianceSummary { get; set; }
     }
 }
